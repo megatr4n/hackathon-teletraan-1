@@ -1,0 +1,1 @@
+{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[-5.3502,36.1193],[-5.3388,36.1411],[-5.342,36.1105],[-5.3502,36.1193]]]},"properties":{"id":"GI-X01~","name":"Gibraltar","lon":-5.3422,"lat":36.1302,"zoom":10.5,"kind":"admin","country":"GIB"}}]}
