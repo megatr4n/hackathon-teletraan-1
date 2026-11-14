@@ -1,0 +1,73 @@
+# TELETRAAN-1 // Target Demonstration Regions Registry
+regions:
+  - id: ua-east
+    name: "Україна / Чорнобиль"
+    name_en: "Ukraine / Chernobyl Exclusion Zone"
+    bbox: [22.0, 44.0, 40.5, 52.5]
+    buffer_km: 20
+    period:
+      start: "2000-11-01"
+      end: "2025-12-31"
+    default_center: [30.0, 51.3]
+    default_zoom: 7.0
+    critical_event:
+      name: "Пожежа в Чорнобильській зоні відчуження"
+      name_en: "Chernobyl Exclusion Zone Wildfire"
+      date: "2020-04-14"
+      date_range: ["2020-04-03", "2020-04-20"]
+      peak_doy: 104
+      bbox: [29.5, 51.0, 30.5, 51.6]
+
+  - id: us-west
+    name: "Каліфорнія (Захід США)"
+    name_en: "California / US West"
+    bbox: [-124.5, 32.5, -114.0, 42.0]
+    buffer_km: 20
+    period:
+      start: "2000-11-01"
+      end: "2025-12-31"
+    default_center: [-121.5, 39.8]
+    default_zoom: 7.0
+    critical_event:
+      name: "Camp Fire Megafire"
+      name_en: "Camp Fire Megafire"
+      date: "2018-11-10"
+      date_range: ["2018-11-08", "2018-11-25"]
+      peak_doy: 314
+      bbox: [-121.8, 39.6, -121.3, 40.0]
+
+  - id: amazon
+    name: "Басейн Амазонки (Бразилія)"
+    name_en: "Amazon Basin / Cerrado"
+    bbox: [-65.0, -18.0, -45.0, -5.0]
+    buffer_km: 25
+    period:
+      start: "2000-11-01"
+      end: "2025-12-31"
+    default_center: [-55.0, -11.0]
+    default_zoom: 6.0
+    critical_event:
+      name: "Амазонська пожежна криза 2019"
+      name_en: "2019 Amazon Wildfire Crisis"
+      date: "2019-08-18"
+      date_range: ["2019-08-01", "2019-08-31"]
+      peak_doy: 230
+      bbox: [-60.0, -14.0, -50.0, -8.0]
+
+  - id: australia
+    name: "Південно-Східна Австралія"
+    name_en: "Southeast Australia (NSW/Victoria)"
+    bbox: [140.0, -39.0, 154.0, -28.0]
+    buffer_km: 25
+    period:
+      start: "2000-11-01"
+      end: "2025-12-31"
+    default_center: [149.5, -35.5]
+    default_zoom: 6.5
+    critical_event:
+      name: "Black Summer Мегапожежі"
+      name_en: "Black Summer Bushfires"
+      date: "2020-01-04"
+      date_range: ["2019-12-15", "2020-01-20"]
+      peak_doy: 4
+      bbox: [148.0, -37.5, 151.0, -33.5]
