@@ -1,0 +1,55 @@
+{
+  "schema_version": "2.2.0",
+  "project": "TELETRAAN-1 // NASA FIRMS PyroHarmonizer",
+  "generated_at": "2026-11-13T00:00:00Z",
+  "source_csv": "config/modis_viirs_coefficients.csv",
+  "calibration_models": {
+    "count_harmonization": {
+      "model_name": "E19_DIURNAL_STRATIFICATION",
+      "description": "Multipliers converting Aqua/Terra MODIS observations (~1km) to S-NPP VIIRS 375m equivalent scale",
+      "coefficients": {
+        "modis_combined": 6.73297434273044,
+        "modis_day": 4.9919362253313935,
+        "modis_night": 18.82703433766624,
+        "viirs_day": 1.0,
+        "viirs_night": 1.0
+      },
+      "empirical_metrics": {
+        "west_us_bias": "+0.54%",
+        "east_us_bias": "+5.14%",
+        "holdout_daytime_wape_2025": "3.66%"
+      }
+    },
+    "frp_spatial_harmonization": {
+      "model_name": "E6_FRP_3KM_GRID",
+      "description": "Spatial grid 3km cell-level calibration for Map 3D pillars and hotspot visualization",
+      "coefficients": {
+        "viirs_day_factor": 0.732069094,
+        "viirs_night_factor": 1.0,
+        "modis_day_factor": 1.36599128,
+        "modis_night_factor": 1.0
+      },
+      "empirical_metrics": {
+        "mae_reduction_pairs": "-17.51%",
+        "mae_reduction_daily_matched": "-38.63%",
+        "bias_reduction": "-89.9%"
+      }
+    },
+    "frp_daily_regional_calendar": {
+      "model_name": "E9_SERRADO_VALIDATED_CALENDAR",
+      "description": "Macro-scale multipliers scaling daily regional aggregate MODIS sums to VIIRS continuous series",
+      "coefficients": {
+        "modis_day": 1.3790668749,
+        "modis_night": 1.82415241154,
+        "modis_unsplit_daily": 1.4231737456,
+        "viirs_day": 1.0,
+        "viirs_night": 1.0
+      },
+      "empirical_metrics": {
+        "daytime_mae_reduction": "-8.81%",
+        "nighttime_mae_reduction": "-25.68%",
+        "total_daily_mae_reduction": "-12.94%"
+      }
+    }
+  }
+}
