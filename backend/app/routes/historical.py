@@ -6,6 +6,7 @@ import h3
 import hashlib
 import json
 import logging
+import re
 import shapely
 from app.services import climatology
 from app.services import historical_data as data
@@ -182,6 +183,7 @@ class CellsResponse(Provenance):
     date: date
     resolution: int
     sensor: Sensor | None
+    square_km: int | None
     cells: list[CellObservation]
     complete: bool
     next_cursor: str | None
@@ -489,9 +491,13 @@ def cell_shape(cell_id):
     return [lon, lat], mapping(polygon)
 
 
-def cell_rows(records, day):
+def cell_rows(records, day, size=None):
     for cell_id, platform, orbit_pass, *values in records:
-        center, geometry = cell_shape(cell_id)
+        if size is None:
+            center, geometry = cell_shape(cell_id)
+        else:
+            center, bounds = data.square_center(cell_id, size)
+            geometry = mapping(shapely.box(*bounds))
         yield {"cell_id": cell_id, "date": day.isoformat(), "platform": platform, "pass": orbit_pass,
                "center": center, "geometry": geometry, "coverage_status": "observed_records", **metrics(*values)}
 
@@ -504,23 +510,28 @@ def cursor_for(selection, day, resolution, sensor, record):
 def cells(query_id: str, day: date,
           resolution: int = Query(6, ge=MIN_RESOLUTION, le=MAX_RESOLUTION),
           cursor: str | None = Query(None, max_length=150), limit: int = Query(2000, ge=1, le=5000),
-          sensor: Sensor | None = None):
+          sensor: Sensor | None = None, square_km: Literal["3", "9", "24"] | None = Query(None)):
     selection = get_selection(query_id, day)
+    size = int(square_km) if square_km else None
     after = ("", "", "")
+    layout = f"square{square_km}" if square_km else resolution
     if cursor:
         parts = cursor.split(":")
-        if parts[:4] != [query_id, day.isoformat(), str(resolution), sensor or "all"] or len(parts) != 7:
+        if parts[:4] != [query_id, day.isoformat(), str(layout), sensor or "all"] or len(parts) != 7:
             raise failure(422, "invalid_cursor", "The cursor belongs to another cell selection")
         cell_key = parts[4]
-        valid = h3.is_valid_cell(cell_key) and h3.get_resolution(cell_key) == resolution
+        if square_km:
+            valid = re.fullmatch(r"\d{1,5}_\d{1,5}", cell_key)
+        else:
+            valid = h3.is_valid_cell(cell_key) and h3.get_resolution(cell_key) == resolution
         if not valid:
             raise failure(422, "invalid_cursor", "The cursor contains an invalid cell")
         if parts[5] not in selection.request.platforms or parts[6] not in ("day", "night", "unknown"):
             raise failure(422, "invalid_cursor", "The cursor contains an invalid platform or pass")
         after = tuple(parts[4:])
     records = read_data(data.cell_records, selection.release, selection, day, resolution, after, limit + 1,
-                        sensor)
+                        sensor, size)
     more = len(records) > limit
-    return {**selection.metadata(), "date": day, "resolution": resolution, "sensor": sensor,
-            "cells": list(cell_rows(records[:limit], day)), "complete": not more,
-            "next_cursor": cursor_for(selection, day, resolution, sensor, records[limit - 1]) if more else None}
+    return {**selection.metadata(), "date": day, "resolution": resolution, "sensor": sensor, "square_km": size,
+            "cells": list(cell_rows(records[:limit], day, size)), "complete": not more,
+            "next_cursor": cursor_for(selection, day, layout, sensor, records[limit - 1]) if more else None}
