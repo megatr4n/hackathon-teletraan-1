@@ -31,11 +31,10 @@ export function quantile(values:number[],q:number):number|null {
   return sorted[lo]+(sorted[hi]-sorted[lo])*(index-lo)
 }
 export function dailyCount(day:ReportDay,pass:Pass) {
-  const terra=day.platforms.find(p=>p.platform==='terra')?.detection_count??null
-  const aqua=day.date<aquaArchiveStart?null:day.platforms.find(p=>p.platform==='aqua')?.detection_count??null
   const viirs=day.date<viirsArchiveStart?null:day.platforms.find(p=>p.platform==='snpp')?.detection_count??null
-  const adjusted=harmonizeHistoricalCount(day.date,day.platforms,pass)
-  return {date:day.date,raw:sum([terra,aqua]),aqua,adjusted:adjusted.value,adjustedPlatform:adjusted.platform,viirs}
+  const modis=harmonizeHistoricalCount(day.date,day.platforms,pass)
+  const aqua=modis.platform==='aqua'?modis.raw:null
+  return {date:day.date,raw:modis.raw,aqua,adjusted:modis.value,adjustedPlatform:modis.platform,viirs}
 }
 export function dailySeries(report:HistoricalReport) {
   return report.series.map(day=>dailyCount(day,report.pass))
@@ -125,7 +124,7 @@ export function reportEvidence(report:HistoricalReport,generatedAt:string) {
   validateReport(report,report.report_start,report.report_end)
   return {report_version:reportVersion,generated_at_utc:generatedAt,source_payload:report,
     derivations:{count_formula:'Terra MODIS detections before '+aquaArchiveStart+', Aqua MODIS detections from that UTC date onward, multiplied by K_COUNT[pass]',
-      raw_modis_formula:'Sum available Terra and Aqua detections. Null if neither has records.',
+      raw_modis_formula:'Terra MODIS detections before '+aquaArchiveStart+', Aqua MODIS detections from that UTC date onward. Null if the selected platform has no records.',
       comparison_baseline:'Raw Aqua MODIS and adjusted Aqua MODIS on the same dates as observed VIIRS',
       aqua_archive_start:aquaArchiveStart,
       coefficients:calibration.hotspots,coefficient_source:'config/modis_viirs_coefficients.csv',

@@ -44,7 +44,7 @@ export function harmonizeHistoricalCount(
 ) {
   const platform=historicalCountPlatform(date)
   const count=records.find(record=>record.platform===platform)?.detection_count??null
-  return {platform,value:count===null?null:count*calibration.hotspots[pass]}
+  return {platform,raw:count,value:count===null?null:count*calibration.hotspots[pass]}
 }
 
 export function dailyFrp(day:number,night:number) {

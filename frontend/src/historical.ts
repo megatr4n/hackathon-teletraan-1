@@ -193,20 +193,20 @@ export function nullableSum(values:(number|null|undefined)[]) {
 export function actualDay(day:Day|undefined, pass:Pass) {
   const modis=day?.platforms.filter(row=>row.platform!=='snpp')??[]
   const viirs=day?.platforms.find(row=>row.platform==='snpp')
-  const rawCount=nullableSum(modis.map(row=>row.detection_count))
+  const count=day?harmonizeHistoricalCount(day.date,modis,pass):undefined
   const raw=nullableSum(modis.map(row=>row.frp_sum_mw))
   const corrected=nullableSum(modis.flatMap(row=>(['day','night'] as const).map(phase=>{
     const value=row.by_pass[phase]?.frp_sum_mw
     return typeof value==='number'?value*calibration.dailyFrp[phase]:null
   })))
-  const correctedCount=day?harmonizeHistoricalCount(day.date,modis,pass).value:null
-  return {raw,rawCount,corrected,correctedCount,
+  return {raw,rawCount:count?.raw??null,corrected,correctedCount:count?.value??null,
     viirs:viirs?.frp_sum_mw??null,viirsCount:viirs?.detection_count??null}
 }
 
 type ActualDay = ReturnType<typeof actualDay>
 export function historicalCalendarValue(date:string, day:ActualDay|undefined, metric:Exclude<Metric,'z'>, harmonized:boolean) {
   const count=metric==='count'
+  const platform=count?(historicalCountPlatform(date)==='terra'?'Terra MODIS':'Aqua MODIS'):'MODIS'
   const afterTransition=date>=snppArchiveStart
   const viirs=day?.[count?'viirsCount':'viirs']??null
   if(afterTransition&&viirs!==null){
@@ -214,7 +214,6 @@ export function historicalCalendarValue(date:string, day:ActualDay|undefined, me
   }
   if(afterTransition||harmonized){
     const modisEstimate=day?.[count?'correctedCount':'corrected']??null
-    const platform=historicalCountPlatform(date)==='terra'?'Terra MODIS':'Aqua MODIS'
     const missing=count?(afterTransition?'No VIIRS or '+platform+' value':'No '+platform+' value to harmonize')
       :afterTransition?'No VIIRS or MODIS value':'No MODIS value to harmonize'
     return {
@@ -224,7 +223,7 @@ export function historicalCalendarValue(date:string, day:ActualDay|undefined, me
     }
   }
   const modis=day?.[count?'rawCount':'raw']??null
-  return {value:modis,source:'MODIS',details:modis===null?'No MODIS value':undefined}
+  return {value:modis,source:platform,details:modis===null?'No '+platform+' value':undefined}
 }
 
 export function historicalCells(rows:CellRow[], date:string, harmonized:boolean):MapCell[] {
@@ -235,6 +234,8 @@ export function historicalCells(rows:CellRow[], date:string, harmonized:boolean)
     else groups.set(row.cell_id,[row])
   }
   const afterTransition=date>=snppArchiveStart
+  const countPlatform=afterTransition&&rows.some(row=>row.platform==='snpp'&&row.detection_count!==null)
+    ?'snpp':historicalCountPlatform(date)
   const modisValue=(row:CellRow)=>{
     if(row.frp_sum_mw===null||!(afterTransition||harmonized))return row.frp_sum_mw
     return row.pass==='unknown'?null:row.frp_sum_mw*calibration.dailyFrp[row.pass]
@@ -244,7 +245,7 @@ export function historicalCells(rows:CellRow[], date:string, harmonized:boolean)
     const modis=group.filter(row=>row.platform!=='snpp')
     const viirsFrp=afterTransition?nullableSum(viirs.map(row=>row.frp_sum_mw)):null
     return {id,center:group[0].center,geometry:group[0].geometry,raw:viirsFrp??nullableSum(modis.map(modisValue)),
-      weight:group.reduce((sum,row)=>sum+(row.detection_count??0),0),pass:group.some(row=>row.pass==='day')?'day':'night'}
+      weight:group.reduce((sum,row)=>sum+(row.platform===countPlatform?(row.detection_count??0):0),0),pass:group.some(row=>row.pass==='day')?'day':'night'}
   })
 }
 

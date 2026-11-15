@@ -14,7 +14,7 @@ The report follows the selected area, not the extent of the map viewport. In par
 
 ## Count graph requested for the export
 
-- Raw MODIS = sum of available Terra and Aqua detection records on the UTC date. If neither is observed, the result is null. Overpasses are not deduplicated into unique fires.
+- Raw MODIS uses Terra through **2002-07-03** and Aqua from **2002-07-04**. If the selected platform has no records on the UTC date, the result is null. Overpasses are not deduplicated into unique fires.
 - Harmonized MODIS uses Terra records through **2002-07-03** and Aqua records from **2002-07-04**. Multiply that platform's daily detection count by `K_COUNT[pass]` from `config/modis_viirs_coefficients.csv`. The estimate is null on days without records from the selected platform.
 - S-NPP VIIRS = observed VIIRS detection records, available from the archive boundary **2012-01-20**. No value is drawn before that boundary; gaps remain null. MODIS is never substituted into this series.
 - The chart shows raw MODIS and a single harmonized series across the Terra-to-Aqua transition. From the VIIRS archive start, a third series shows observed VIIRS.
@@ -34,7 +34,7 @@ The historical panel, calendar and report use the same daily platform rule. The 
 ## PDF contents
 
 1. Selection, UTC period, actual bounds, source release, manifest SHA-256 and query ID.
-2. Raw Terra + Aqua MODIS, harmonized MODIS (Terra to Aqua) and observed VIIRS detection series.
+2. Raw and harmonized MODIS (Terra to Aqua) and observed VIIRS detection series.
 3. Raw FRP in separate Aqua, S-NPP and Terra panels, with a shared vertical scale.
 4. Detection-record availability by platform and counts of missing FRP records.
 5. Period totals, valid and missing FRP records, means, median, 95th percentile, peaks and the selected day.

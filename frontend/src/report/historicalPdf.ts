@@ -109,9 +109,9 @@ export function buildHistoricalPdf(report:HistoricalReport,areaLabel:string,font
   y=para('Raw values come from the verified FIRMS archive. Harmonized counts apply the configured project coefficient to Terra records before '+aquaArchiveStart+' and Aqua records from that date onward.',y)
   para('Detections count satellite records, not distinct fires or burned area. Missing records do not establish an absence of fire. This report does not estimate fire energy, emissions, damage or a calibrated risk probability.',y)
 
-  page('02 / Counts','Satellite detection counts','Raw MODIS combines available Terra and Aqua records. The harmonized series switches from Terra to Aqua at the Aqua archive start.')
+  page('02 / Counts','Satellite detection counts','Both MODIS count series switch from Terra to Aqua at the Aqua archive start. Harmonized counts apply the configured coefficient.')
   const counts=dailySeries(report),grouped=countBins(report),rows=grouped.rows
-  const countLines:Line[]=[{label:'MODIS raw (Terra + Aqua)',color:gray,values:rows.map(r=>r.raw),dash:[1.5,1]}]
+  const countLines:Line[]=[{label:'MODIS raw (Terra to Aqua)',color:gray,values:rows.map(r=>r.raw),dash:[1.5,1]}]
   const startPlatform=historicalCountPlatform(report.report_start)
   const endPlatform=historicalCountPlatform(report.report_end)
   if(report.platforms.includes(startPlatform)||report.platforms.includes(endPlatform)){
@@ -219,7 +219,7 @@ export function buildHistoricalPdf(report:HistoricalReport,areaLabel:string,font
   y=para('2. Count harmonization',y+2,12,ink)
   y=para('K_COUNT: all = '+calibration.hotspots.all+'; day = '+calibration.hotspots.day+'; night = '+calibration.hotspots.night+'. Source: config/modis_viirs_coefficients.csv. Apply the selected coefficient to the daily count of Terra before '+aquaArchiveStart+' and Aqua from that date onward.',y)
   y=para('3. Missing values and comparability',y+2,12,ink)
-  y=para('No zeros are fabricated for missing records; no interpolation, extrapolation or substitution of VIIRS. MODIS totals combine available Terra and Aqua observations. VIIRS begins on 2012-01-20. Different sensors may observe the same fire repeatedly.',y)
+  y=para('No zeros are fabricated for missing records; no interpolation, extrapolation or substitution of VIIRS. MODIS detection totals use the selected platform for each date. The per-platform tables retain the individual records. VIIRS begins on 2012-01-20. Different sensors may observe the same fire repeatedly.',y)
   y=para('4. Statistical limits',y+2,12,ink)
   y=para('FRP is measured in MW. No FRE, emissions or burned area is inferred. Coefficient uncertainty is not quantified here; no confidence band is invented. Matched-day differences measure agreement for this sample, not global accuracy. No synthetic scenario values or preset accuracy percentages enter this historical report.',y)
   y=para('5. Official source definitions',y+2,12,ink)

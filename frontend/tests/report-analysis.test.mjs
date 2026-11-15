@@ -5,7 +5,7 @@ const vite=await createServer({configFile:false,server:{middlewareMode:true,hmr:
 try{
   const {dailySeries,countBins,pairedCounts,validateReport,reportEvidence}=await vite.ssrLoadModule('/src/report/analysis.ts')
   const {calibration}=await vite.ssrLoadModule('/src/calibration.ts')
-  const {actualDay,historicalCalendarValue}=await vite.ssrLoadModule('/src/historical.ts')
+  const {actualDay,historicalCalendarValue,historicalCells}=await vite.ssrLoadModule('/src/historical.ts')
   function fixture(start,n){
     const empty={detection_count:null,valid_frp_count:0,missing_frp_count:0,frp_sum_mw:null}
     const series=Array.from({length:n},(_,i)=>({date:new Date(Date.parse(start)+86400000*i).toISOString().slice(0,10),
@@ -33,13 +33,13 @@ try{
   const r=fixture('2012-01-19',4)
   record(r,0,'terra',2);record(r,0,'snpp',99) // even a malformed pre-launch input cannot create a VIIRS chart value
   record(r,1,'terra',2);record(r,1,'aqua',3);record(r,1,'snpp',20)
-  record(r,2,'terra',4,null) // Raw MODIS still counts detections without FRP.
+  record(r,2,'aqua',4,null) // Raw MODIS still counts detections without FRP.
   record(r,3,'terra',7);record(r,3,'snpp',10) // Terra alone cannot enter the Aqua comparison.
   summarize(r)
   const rows=dailySeries(r)
   assert.equal(rows[0].viirs,null);assert.equal(rows[0].adjusted,null)
-  assert.equal(rows[1].raw,5);assert.equal(rows[1].adjusted,3*calibration.hotspots.all);assert.equal(rows[1].viirs,20)
-  assert.equal(rows[2].raw,4);assert.equal(rows[2].viirs,null);assert.equal(rows[3].raw,7);assert.equal(rows[3].adjusted,null)
+  assert.equal(rows[1].raw,3);assert.equal(rows[1].adjusted,3*calibration.hotspots.all);assert.equal(rows[1].viirs,20)
+  assert.equal(rows[2].raw,4);assert.equal(rows[2].viirs,null);assert.equal(rows[3].raw,null);assert.equal(rows[3].adjusted,null)
   for(const pass of ['all','day','night'])assert.equal(dailySeries({...r,pass})[1].adjusted,3*calibration.hotspots[pass])
   const pair=pairedCounts(rows)
   assert.equal(pair.n,1);assert.equal(pair.rawAqua.mae,17);assert.equal(pair.rawAqua.meanDifference,-17);assert.equal(pair.rawAqua.wape,85)
@@ -59,18 +59,30 @@ try{
   const july3=early.series.findIndex(day=>day.date==='2002-07-03')
   record(early,july3,'terra',2);record(early,july3,'aqua',99) // The Aqua archive starts on the following day.
   record(early,july3+1,'terra',8);record(early,july3+1,'aqua',4)
-  record(early,july3+2,'terra',12) // Post-transition Terra is still raw MODIS.
+  record(early,july3+2,'terra',12) // Post-transition Terra cannot replace missing Aqua.
   const edge=early.series.slice(july3,july3+3)
   for(const pass of ['all','day','night']){
     const before=2*calibration.hotspots[pass],after=4*calibration.hotspots[pass]
     const daily=dailySeries({...early,pass,series:edge})
-    assert.deepEqual(daily.map(d=>d.raw),[2,12,12])
+    assert.deepEqual(daily.map(d=>d.raw),[2,4,null])
+    assert.deepEqual(edge.map(day=>actualDay(day,pass).rawCount),[2,4,null])
     assert.deepEqual(daily.map(d=>d.adjustedPlatform),['terra','aqua','aqua'])
     assert.deepEqual(daily.map(d=>d.adjusted),[before,after,null])
     assert.deepEqual(edge.map(day=>actualDay(day,pass).correctedCount),[before,after,null])
   }
   assert.equal(historicalCalendarValue(edge[0].date,actualDay(edge[0],'all'),'count',true).source,'Harmonized Terra MODIS (estimate)')
   assert.equal(historicalCalendarValue(edge[1].date,actualDay(edge[1],'all'),'count',true).source,'Harmonized Aqua MODIS (estimate)')
+  assert.equal(historicalCalendarValue(edge[0].date,actualDay(edge[0],'all'),'count',false).source,'Terra MODIS')
+  assert.equal(historicalCalendarValue(edge[1].date,actualDay(edge[1],'all'),'count',false).source,'Aqua MODIS')
+  assert.equal(historicalCalendarValue(r.series[2].date,actualDay(r.series[2],'all'),'count',false).value,4*calibration.hotspots.all)
+  const cell=(cell_id,platform,detection_count)=>({cell_id,platform,detection_count,frp_sum_mw:detection_count,pass:'day',center:[0,0]})
+  const modis=[cell('shared','terra',8),cell('shared','aqua',4),cell('terra-only','terra',7)]
+  const weights=(rows,date)=>historicalCells(rows,date,false).map(c=>c.weight)
+  assert.deepEqual(weights(modis,'2002-07-03'),[8,7])
+  assert.deepEqual(weights(modis,'2002-07-04'),[4,0])
+  assert.deepEqual(weights(modis,'2012-01-20'),[4,0])
+  assert.deepEqual(weights([...modis,cell('viirs-only','snpp',10)],'2012-01-20'),[0,0,10])
+  assert.equal(historicalCells(modis,'2002-07-04',false)[0].raw,12) // FRP keeps its existing aggregation.
   const july=countBins(early).rows.find(row=>row.date==='2002-07-01')
   assert.ok(Math.abs(july.adjusted-3*calibration.hotspots.all)<1e-10)
   assert.equal(july.nAdjusted,2)
@@ -80,7 +92,7 @@ try{
   record(monthly,60,'snpp',10)
   summarize(monthly)
   const mb=countBins(monthly)
-  assert.equal(mb.monthly,true);assert.equal(mb.rows[0].requested,31);assert.equal(mb.rows[0].raw,6);assert.equal(mb.rows[0].nModis,2);assert.equal(mb.rows[0].nAqua,1)
+  assert.equal(mb.monthly,true);assert.equal(mb.rows[0].requested,31);assert.equal(mb.rows[0].raw,4);assert.equal(mb.rows[0].nModis,1);assert.equal(mb.rows[0].nAqua,1)
   assert.equal(mb.rows[0].viirs,null);assert.equal(mb.rows[1].nViirs,1)
   assert.equal(mb.rows.at(-1).requested,1) // partial last month is retained
   const evidence=reportEvidence(monthly,'2026-11-15T00:00:00Z')

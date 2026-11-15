@@ -3,7 +3,7 @@ import { rankQuietMonths } from './seasonalHotspots'
 import * as Dialog from '@radix-ui/react-dialog'
 import { Activity, ArrowDown, ArrowDownToLine, ArrowUpRight, Bookmark, BookmarkPlus, Camera as CameraIcon, Circle, ChevronLeft, ChevronRight, Clock3, CodeXml, Crosshair, FileText, Film, Focus as FocusIcon, Grid2X2, Layers3, Lasso, Leaf, MapPin, Ruler, Search, SlidersHorizontal, Satellite, TriangleAlert, X, Zap } from 'lucide-react'
 import { areaPolygon, californiaOverviewBounds, cellPolygon, clampDate, doy, firstDate, maxCircleRadius, number, prettyDate, territories, type Aoi, type Cell, type Coord, type MapBounds } from './data'
-import { calibration, calibrationAccuracy } from './calibration'
+import { aquaArchiveStart, calibration, calibrationAccuracy, historicalCountPlatform } from './calibration'
 import { cellObservations, dailyEstimates, dailyStats, dateIndex, periodStats, viirsStart } from './estimates'
 import { calendarWeeks, datesInRange, nextWeekDate, sumMapCells, summarizeWeek, weekIndex, weekRange } from './calendarWeeks'
 import { archiveDates, observations } from './observations'
@@ -270,11 +270,11 @@ export function App() {
       })))
     }
     return rankQuietMonths((actual.days ?? []).map(day => {
-      const aqua = day.platforms.find(platform => platform.platform === 'aqua')
+      const record = day.platforms.find(platform => platform.platform === historicalCountPlatform(day.date))
       return {
         date: day.date,
-        detections: aqua?.detection_count ?? null,
-        outsideRange: !aqua || aqua.coverage_status === 'outside_observed_range',
+        detections: record?.detection_count ?? null,
+        outsideRange: !record || record.coverage_status === 'outside_observed_range',
       }
     }))
   }, [historical, actual.days, series])
@@ -616,7 +616,7 @@ export function App() {
           <section className="analysis-card seasonal-hotspots" aria-labelledby="quiet-months-title">
             <h4 id="quiet-months-title">Lowest-activity months</h4>
             <div className="seasonal-hotspots-body">
-              <p className="seasonal-source">{historical ? 'Aqua MODIS' : 'Synthetic preview'} · Full archive · {pass === 'all' ? 'All passes' : pass === 'day' ? 'Day passes' : 'Night passes'}</p>
+              <p className="seasonal-source">{historical ? 'MODIS · Terra → Aqua' : 'Synthetic preview'} · Full archive · {pass === 'all' ? 'All passes' : pass === 'day' ? 'Day passes' : 'Night passes'}</p>
               {quietMonths.length > 0 ? <>
                 <ol className="seasonal-months">
                   {quietMonths.slice(0, 3).map(month => (
@@ -640,7 +640,7 @@ export function App() {
           </p>}
           {(actual.complete===false||cells.length>mapCellLimit)&&<p className="sensor-note">Map display limit reached. Calendar totals still use the full available archive.</p>}
           <section className="analysis-card calibration">
-            <h4><Layers3 size={14}/> Scientific intercalibration <InfoTip label="Hotspots" help={hotspotHelp}/><InfoTip label="FRP" help={frpHelp}/></h4>
+            <h4><Layers3 size={14}/> Scientific intercalibration <InfoTip label="Hotspots" help={historical?hotspotHelp+' MODIS counts use Terra before '+aquaArchiveStart+' and Aqua from that date. Harmonized counts apply the coefficient to that platform alone.':hotspotHelp}/><InfoTip label="FRP" help={frpHelp}/></h4>
             <div className="calibration-group selected-stats">
               {weekStats?<><div className="sensor-group">Selected week</div>
                 <SensorRow label="Hotspot sum" value={display(weekStats.count.value)}/>
@@ -649,7 +649,7 @@ export function App() {
               </>:<>
               <div className="sensor-group">Selected day · {date}</div>
               <SensorRow label="Raw MODIS hotspots" value={display(daily.rawCount)} active={!harmonized}/>
-              <SensorRow label="Harmonized MODIS hotspots" value={display(daily.correctedCount)} active={harmonized}/>
+              <SensorRow label={historical?'Harmonized '+(historicalCountPlatform(date)==='terra'?'Terra':'Aqua')+' MODIS hotspots':'Harmonized MODIS hotspots'} value={display(daily.correctedCount)} active={harmonized}/>
               {viirs&&<SensorRow label="VIIRS hotspots" value={display(daily.viirsCount)}/>}
               <SensorRow label="Raw MODIS FRP" value={display(daily.raw)} unit="MW" active={!harmonized}/>
               <SensorRow label="Harmonized MODIS FRP" value={display(daily.corrected)} unit="MW" active={harmonized}/>

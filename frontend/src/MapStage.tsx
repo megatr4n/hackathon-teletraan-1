@@ -351,8 +351,8 @@ export function MapStage({focus,date,cells,loadingCells,weekly,aoi,tool,onArea,o
       const item=cellPolygon(cell,.72)
       return {...item,properties:{...item.properties,power:cell.raw}}
     })))
-    set('fireCenters',collection(historical?visibleCells.map(cell=>({type:'Feature',properties:{detections:cell.weight},
-      geometry:{type:'Point',coordinates:cell.center}})):[]))
+    set('fireCenters',collection(historical?visibleCells.flatMap(cell=>cell.weight>0?[{type:'Feature',properties:{detections:cell.weight},
+      geometry:{type:'Point',coordinates:cell.center}}]:[]):[]))
     const hazards = showDemoContours ? [hazardShape(focus.center,6,-1,64,40,1.5),hazardShape(focus.center,-12,13,24,13,2.5),hazardShape(focus.center,25,-12,31,16,2.5)] : []
     set('hazard',collection(hazards))
     set('area',collection(aoi ? [{type:'Feature',geometry:areaPolygon(aoi),properties:{}}] : selected ? [selected] : []))
