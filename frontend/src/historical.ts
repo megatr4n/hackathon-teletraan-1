@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import type { MultiPolygon, Polygon } from 'geojson'
 import { areaPolygon, firstDate, lastDate, type Coord, type Pass } from './data'
-import type { Snapshot } from './pins'
+import { calibration } from './calibration'
+import type { Metric, Snapshot } from './pins'
 
 const configuredApi = import.meta.env.VITE_FIRMS_API
 export const historicalApi = configuredApi===undefined?undefined:import.meta.env.DEV?'':configuredApi.replace(/\/$/, '')
@@ -142,4 +143,45 @@ export function useHistorical(enabled:boolean, request:string, date:string) {
   return {selection, days:current?.days, day:current?.days.find(row=>row.date===date)??(activeDay?.key===mapKey?activeDay.value:undefined),
     rows:visible?.rows, complete:visible?.complete,
     error:error?.key===key||error?.key===mapKey?error.message:null, retry:()=>retry(value=>value+1)}
+}
+
+export const snppArchiveStart='2012-01-20'
+
+export function nullableSum(values:(number|null|undefined)[]) {
+  const valid=values.filter((value):value is number=>typeof value==='number')
+  return valid.length?valid.reduce((sum,value)=>sum+value,0):null
+}
+
+export function actualDay(day:Day|undefined, pass:Pass) {
+  const modis=day?.platforms.filter(row=>row.platform!=='snpp')??[]
+  const viirs=day?.platforms.find(row=>row.platform==='snpp')
+  const rawCount=nullableSum(modis.map(row=>row.detection_count))
+  const raw=nullableSum(modis.map(row=>row.frp_sum_mw))
+  const corrected=nullableSum(modis.flatMap(row=>(['day','night'] as const).map(phase=>{
+    const value=row.by_pass[phase]?.frp_sum_mw
+    return typeof value==='number'?value*calibration.dailyFrp[phase]:null
+  })))
+  return {raw,rawCount,corrected,correctedCount:rawCount===null?null:rawCount*calibration.hotspots[pass],
+    viirs:viirs?.frp_sum_mw??null,viirsCount:viirs?.detection_count??null}
+}
+
+type ActualDay = ReturnType<typeof actualDay>
+export function historicalCalendarValue(date:string, day:ActualDay|undefined, metric:Exclude<Metric,'z'>, harmonized:boolean) {
+  const count=metric==='count'
+  const afterTransition=date>=snppArchiveStart
+  const viirs=day?.[count?'viirsCount':'viirs']??null
+  if(afterTransition&&(!harmonized||viirs!==null)){
+    return {value:viirs,source:'VIIRS S-NPP',details:viirs===null?'No VIIRS S-NPP value':undefined}
+  }
+  if(harmonized){
+    const modisEstimate=day?.[count?'correctedCount':'corrected']??null
+    const missing=afterTransition?'No VIIRS or MODIS value':'No MODIS value to harmonize'
+    return {
+      value:modisEstimate,
+      source:'Adjusted MODIS (estimate)',
+      details:modisEstimate===null?missing:undefined,
+    }
+  }
+  const modis=day?.[count?'rawCount':'raw']??null
+  return {value:modis,source:'MODIS',details:modis===null?'No MODIS value':undefined}
 }
