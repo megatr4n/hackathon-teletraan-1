@@ -9,7 +9,7 @@ import { calendarWeeks, datesInRange, nextWeekDate, sumMapCells, summarizeWeek, 
 import { archiveDates, observations } from './observations'
 import { countryOptions, emptyRegions, focusForRegion, geography, type AreaMode, type Region, type RegionCollection, type RegionFeature } from './geography'
 import { MapStage, type Tool } from './MapStage'
-import { initialSnapshot, readPins, writePins, type Camera, type Pin, type Snapshot } from './pins'
+import { chernobylPinBounds, initialSnapshot, readPins, writePins, type Camera, type Pin, type Snapshot } from './pins'
 import { Timeline } from './Timeline'
 import { Button, InfoTip, Segmented, frpHelp, hotspotHelp, zScoreHelp } from './ui'
 import type { HistoricalReport } from './statisticalReport'
@@ -102,7 +102,7 @@ export function App() {
   const camera=useRef(settings.camera)
   const [command,setCommand]=useState<CameraCommand|null>(()=>settings===initialSnapshot?null:{
     camera:settings.camera,duration:0,
-    bounds:focus.id==='california'&&!region&&!aoi?californiaOverviewBounds:undefined,
+    bounds:focus.id==='california'&&!region&&!aoi?californiaOverviewBounds:chernobylPinBounds(focus,aoi),
   })
   const [filtersOpen,setFiltersOpen]=useState(()=>!window.matchMedia(narrowWorkbench).matches)
   const [analyticsOpen,setAnalyticsOpen]=useState(()=>!window.matchMedia(narrowWorkbench).matches)
@@ -421,7 +421,8 @@ export function App() {
     const snapshot=pin.snapshot
     const restoredFocus=snapshot.region?.kind==='country'?{...snapshot.focus,area:'Country or territory'}:snapshot.focus
     setTool(null);setMeasuring(false);setOrbiting(false);setPlaying(false);setPinMenu(false)
-    const bounds=pin.id==='demo-california'&&!snapshot.region&&!snapshot.aoi?californiaOverviewBounds:undefined
+    const bounds=pin.id==='demo-california'?californiaOverviewBounds:
+      pin.id==='demo-chernobyl'?chernobylPinBounds(snapshot.focus,snapshot.aoi):undefined
     navigateTo(snapshot.camera,()=>setSettings({...snapshot,focus:restoredFocus}),true,0,bounds)
     setMessage('Opened '+pin.name)
   }
