@@ -4,18 +4,19 @@ import * as Dialog from '@radix-ui/react-dialog'
 import { Activity, ArrowDown, ArrowDownToLine, ArrowUpRight, Bookmark, BookmarkPlus, Camera as CameraIcon, Circle, ChevronLeft, ChevronRight, Clock3, CodeXml, Crosshair, FileText, Film, Focus as FocusIcon, Grid2X2, Layers3, Lasso, Leaf, MapPin, Ruler, Search, SlidersHorizontal, Satellite, TriangleAlert, X, Zap } from 'lucide-react'
 import { areaPolygon, californiaOverviewBounds, cellPolygon, clampDate, doy, firstDate, maxCircleRadius, number, prettyDate, territories, type Aoi, type Cell, type Coord, type MapBounds } from './data'
 import { aquaArchiveStart, calibration, calibrationAccuracy, historicalCountPlatform } from './calibration'
-import { cellObservations, dailyEstimates, dailyStats, dateIndex, periodStats, viirsStart } from './estimates'
+import { cellObservations, dailyEstimates, dailyStats, dateIndex, emptyObservation, periodStats, viirsStart } from './estimates'
 import { calendarWeeks, datesInRange, nextWeekDate, sumMapCells, summarizeWeek, weekIndex, weekRange } from './calendarWeeks'
 import { archiveDates, observations } from './observations'
 import { countryOptions, emptyRegions, focusForRegion, geography, type AreaMode, type Region, type RegionCollection, type RegionFeature } from './geography'
 import { MapStage, type Tool } from './MapStage'
-import { chernobylPinBounds, initialSnapshot, readPins, writePins, type Camera, type Pin, type Snapshot } from './pins'
+import { builtInPins, chernobylPinBounds, initialSnapshot, readPins, writePins, type Camera, type Pin, type Snapshot } from './pins'
 import { Timeline } from './Timeline'
 import { Button, InfoTip, Segmented, frpHelp, hotspotHelp, zScoreHelp } from './ui'
 import type { HistoricalReport } from './statisticalReport'
 import { historicalApi, historicalFetch, gridParams, historicalArea, historicalCells, historicalRequest, useHistorical, useHistoricalMap, actualDay, historicalCalendarValue, scoreDetails, actualPeriod, snppArchiveStart } from './historical'
 import { useFireZones } from './fireZones'
 import { snapshotFromUrl, updateViewUrl } from './viewLink'
+import { recordingSettings, useRecordingHistory } from './recordingDemo'
 
 import { cinematicTrack, tourRegions, type CameraCommand, type CameraDestination } from './cameraTour'
 function UtcClock() {
@@ -28,6 +29,8 @@ function UtcClock() {
 }
 
 const narrowWorkbench='(max-width: 900px)'
+const emptyRecordingSeries:ReturnType<typeof dailyStats>[]=Array(archiveDates.length).fill(dailyStats(emptyObservation(),'all',false))
+const emptyDemoCells:Cell[]=[]
 const normalize=(value:string)=>value.normalize('NFD').replace(/\p{Diacritic}/gu,'').toLowerCase()
 const countryAliases = new Map(territories.map(country=>[country.iso3,normalize(country.name_uk)]))
 
@@ -97,7 +100,11 @@ function SensorRow({label,value,unit,active}:{label:string;value:string;unit?:st
 }
 
 export function App() {
-  const [settings,setSettings]=useState(()=>snapshotFromUrl())
+  const [recordingMode]=useState(()=>new URLSearchParams(window.location.search).get('recording')==='1')
+  const [settings,setSettings]=useState(()=>{
+    const snapshot=snapshotFromUrl()
+    return recordingMode?recordingSettings(snapshot,new URLSearchParams(window.location.search)):snapshot
+  })
   const {focus,region,date,from,to,pass,harmonized,areaMode,aoi,radius,query,options,metric,calendarView}=settings
   const camera=useRef(settings.camera)
   const [command,setCommand]=useState<CameraCommand|null>(()=>settings===initialSnapshot?null:{
@@ -124,6 +131,7 @@ export function App() {
   const [tourStop,setTourStop]=useState(0)
   const tour=useRef<{original:Snapshot;camera:Camera;stops:Snapshot[];short:boolean}|null>(null)
   const [pins,setPins]=useState(readPins)
+  const visiblePins=recordingMode?builtInPins:pins
   const [pinMenu,setPinMenu]=useState(false)
   const [pinDialog,setPinDialog]=useState(false)
   const [pinName,setPinName]=useState('')
@@ -139,9 +147,9 @@ export function App() {
   useEffect(()=>{
     let active=true
     geography<RegionCollection>('countries').then(value=>{if(active)setCountries(value)}).catch(()=>{if(active)setGeographyError('Country boundaries unavailable')})
-    geography<Region[]>('admin-index').then(value=>{if(active)setAdminIndex(value)}).catch(()=>{if(active)setGeographyError('Administrative search unavailable')})
+    if(!recordingMode)geography<Region[]>('admin-index').then(value=>{if(active)setAdminIndex(value)}).catch(()=>{if(active)setGeographyError('Administrative search unavailable')})
     return ()=>{active=false}
-  },[])
+  },[recordingMode])
   useEffect(()=>{
     setAdmins(emptyRegions)
     if(!adminCountry||!adminIndex.some(entry=>entry.country===adminCountry))return
@@ -175,15 +183,15 @@ export function App() {
   },[region,areaMode,ecoregions,admins,countries])
   const boundary=useMemo(()=>areaMode==='custom'&&aoi?.type==='lasso'?areaPolygon(aoi):selected?.geometry,[areaMode,aoi,selected])
   const circle=areaMode==='custom'&&aoi?.type==='circle'?aoi:undefined
-  const source=useMemo(()=>observations(focus,boundary,circle),[focus,boundary,circle])
-  const history=useMemo(()=>source.history(),[source])
+  const source=useMemo(()=>recordingMode?undefined:observations(focus,boundary,circle),[recordingMode,focus,boundary,circle])
+  const history=useMemo(()=>source?.history(),[source])
   const viirsDay=dateIndex(viirsStart,firstDate)
-  const series=useMemo(()=>history.map((day,index)=>dailyStats(day,pass,index>=viirsDay)),[history,pass,viirsDay])
+  const series=useMemo(()=>history?.map((day,index)=>dailyStats(day,pass,index>=viirsDay))??emptyRecordingSeries,[history,pass,viirsDay])
   const activeIndex=dateIndex(date,firstDate)
   const stats=series[activeIndex]
   const startIndex=dateIndex(from,firstDate), endIndex=dateIndex(to,firstDate)
   const period=useMemo(()=>periodStats(series,startIndex,endIndex,pass,viirsDay),[series,startIndex,endIndex,pass,viirsDay])
-  const demoCells=useMemo(()=>source.cellsForDay(date).filter(cell=>pass==='all'||cell.pass===pass),[source,date,pass])
+  const demoCells=useMemo(()=>source?.cellsForDay(date).filter(cell=>pass==='all'||cell.pass===pass)??emptyDemoCells,[source,date,pass])
   const estimates=dailyEstimates(stats,harmonized,focus)
   const adjustment=stats.raw?100*(stats.corrected/stats.raw-1):0
   const delta=100*(estimates.frp/focus.median-1)
@@ -192,20 +200,25 @@ export function App() {
   useEffect(()=>{
     if(!orbiting)updateViewUrl(settings)
   },[orbiting,settings])
-  const historical=historicalApi!==undefined
+  const historical=recordingMode||historicalApi!==undefined
   const viirs=date>=(historical?snppArchiveStart:viirsStart)
   const activeWeek=weekRange(calendarWeeks[weekIndex(date)],from,to)
   const mapFrom=hasSelectedDay?date:activeWeek.from
   const mapTo=hasSelectedDay?date:activeWeek.to
+  const request=historicalRequest(settings)
+  const recording=useRecordingHistory(recordingMode,pass)
+  const prepared=recording.history?.get(request)
+  const recordingReady=!recordingMode||Boolean(recording.history)
   const zonesRequested=historical&&showFireZones&&!orbiting
-  const archive=useHistorical(historical,historicalRequest(settings),date)
-  const fireZones=useFireZones(zonesRequested&&(archive.selection||archive.error)
+  const archive=useHistorical(historical&&(!recordingMode||Boolean(prepared)),request,date,prepared)
+  const fireZones=useFireZones(zonesRequested&&(archive.selection||(!recordingMode&&archive.error))
     ?JSON.stringify({area:historicalArea(settings)}):undefined,archive.selection?.dataset_manifest_sha256)
   const zonesActive=zonesRequested&&Boolean(fireZones.data?.features.length)
-  const mapObservations=useHistoricalMap(historical&&!zonesActive,archive.selection?.query_id,archive.key,mapFrom,mapTo)
-  const actual={...archive,...mapObservations,error:archive.error??mapObservations.error}
+  const mapObservations=useHistoricalMap(historical&&!zonesActive,archive.selection?.query_id,archive.key,mapFrom,mapTo,prepared?.mapDays)
+  const actual={...archive,...mapObservations,error:recording.error??archive.error??mapObservations.error}
   const cells=useMemo(()=>{
     if(historical)return sumMapCells(actual.mapDays?.map(day=>historicalCells(day.rows,day.date,harmonized))??[])
+    if(!source)return []
     return sumMapCells(datesInRange(mapFrom,mapTo).map(day=>source.cellsForDay(day)
       .filter(cell=>pass==='all'||cell.pass===pass)
       .map(cell=>{
@@ -329,6 +342,7 @@ export function App() {
     navigateTo(target,()=>setSettings(current=>({...current,focus:nextFocus,region:next,areaMode:nextMode,aoi:null,query:next.name})),globe,880)
   }
   function selectMapRegion(feature:RegionFeature,point?:Coord) {
+    if(recordingMode)return
     const target=feature.properties
     if(target.kind==='country'&&region?.id===target.id)return
     const entry=target.kind==='country'?countryList.find(item=>item.id===target.id&&item.kind==='country')??target:target
@@ -393,10 +407,17 @@ export function App() {
     setSettings(target)
     setCommand({track:cinematicTrack(target.focus,index,active.short)})
   }
+  function recordingView(snapshot:Snapshot):Snapshot {
+    return {...snapshot,pass,harmonized,metric,calendarView,options}
+  }
   function orbit(short=false) {
     if(orbiting){stopTour(true);return}
+    if(!recordingReady)return
     setMeasuring(false);setTool(null);setPlaying(false)
-    const stops=tourRegions.map(entry=>({
+    const stops=recordingMode?tourRegions.flatMap(entry=>{
+      const pin=builtInPins.find(candidate=>candidate.snapshot.focus.id===entry.id)
+      return pin?[recordingView(pin.snapshot)]:[]
+    }):tourRegions.map(entry=>({
       ...settings,focus:entry,region:null,areaMode:'countries' as const,aoi:null,query:'',
       date:entry.date,granularity:undefined,from:entry.date<from?entry.date:from,to:entry.date>to?entry.date:to,
     }))
@@ -418,7 +439,7 @@ export function App() {
   }
   function restorePin(pin:Pin) {
     stopTour(false)
-    const snapshot=pin.snapshot
+    const snapshot=recordingMode?recordingView(pin.snapshot):pin.snapshot
     const restoredFocus=snapshot.region?.kind==='country'?{...snapshot.focus,area:'Country or territory'}:snapshot.focus
     setTool(null);setMeasuring(false);setOrbiting(false);setPlaying(false);setPinMenu(false)
     const bounds=pin.id==='demo-california'?californiaOverviewBounds:
@@ -503,34 +524,44 @@ export function App() {
       <div className="query-filter-sections">
         <section className="filter-section">
           <h3><FocusIcon size={14}/>Area of interest <InfoTip label="Area of interest" help="Choose the country, administrative region, ecoregion, or custom area used to filter observations."/></h3>
-          <Segmented label="Area of interest" value={areaMode} onChange={changeAreaMode} className="area-mode"
-            items={[{value:'countries',label:'Countries'},{value:'ecoregions',label:'Eco-regions'},{value:'custom',label:'Custom Area'}]}/>
-          <RegionSearch key={areaMode} query={query} mode={areaMode} options={displayOptions} onQuery={value=>setSettings(current=>({...current,query:value}))} onChoose={next=>chooseRegion(next,undefined,true)}/>
-          {areaMode!=='custom'?<>
-            <div className="focus-card"><MapPin size={17}/><div><strong>{focus.name}</strong><span>{focus.area}</span></div><Crosshair size={14} className="focus-cross"/></div>
-            {areaMode==='countries'&&region?.country&&admins.features.length>0&&<label className="admin-field">
-              <span>Administrative region</span><select aria-label="Administrative region" value={region.kind==='admin'?region.id:''}
-                onChange={event=>{
-                  const id=event.target.value
-                  const match=id?admins.features.find(feature=>feature.properties.id===id):undefined
-                  const country=countryList.find(entry=>entry.kind==='country'&&entry.id===region.country)
-                  if(match)chooseRegion(match.properties,undefined,true)
-                  else if(!id&&country)chooseRegion(country,undefined,true)
-                }}>
-                <option value="">Whole country</option>
-                {[...admins.features].sort((a,b)=>a.properties.name.localeCompare(b.properties.name)).map(feature=><option key={feature.properties.id} value={feature.properties.id}>{feature.properties.name}</option>)}
-              </select>
-            </label>}
-            <p className="filter-hint">{geographyError||(areaMode==='ecoregions'?(ecoList.length?'Select an ecoregion on the map or search by name.':'Loading WWF ecoregions…'):'Select a country on the map, then choose a state or province.')}</p>
-          </>:<div className="custom-tools">
-            <label className="radius-input"><span>Radius</span><RadiusField value={circlePreviewRadius??radius} onChange={setRadius}/><span>km</span></label>
-            <div className="custom-buttons">
-              <Button aria-pressed={tool==='circle'} onClick={()=>{setMeasuring(false);setTool(tool==='circle'?null:'circle')}}><Circle size={13}/> Radial Circle</Button>
-              <Button aria-pressed={tool==='lasso'} onClick={()=>{setMeasuring(false);setTool(tool==='lasso'?null:'lasso')}}><Lasso size={13}/> Freehand Lasso</Button>
-              <Button onClick={()=>setDialog(true)}><MapPin size={13}/> Enter Lat/Lon</Button>
-              {aoi&&<Button onClick={()=>setSettings(current=>({...current,aoi:null}))}><X size={13}/> Clear Area</Button>}
-            </div>
-          </div>}
+          {recordingMode?<label className="admin-field">
+            <span>Recording region</span>
+            <select value={focus.id} onChange={event=>{
+              const pin=builtInPins.find(candidate=>candidate.snapshot.focus.id===event.target.value)
+              if(pin)restorePin(pin)
+            }}>
+              {builtInPins.map(pin=><option key={pin.id} value={pin.snapshot.focus.id}>{pin.name}</option>)}
+            </select>
+          </label>:<>
+            <Segmented label="Area of interest" value={areaMode} onChange={changeAreaMode} className="area-mode"
+              items={[{value:'countries',label:'Countries'},{value:'ecoregions',label:'Eco-regions'},{value:'custom',label:'Custom Area'}]}/>
+            <RegionSearch key={areaMode} query={query} mode={areaMode} options={displayOptions} onQuery={value=>setSettings(current=>({...current,query:value}))} onChoose={next=>chooseRegion(next,undefined,true)}/>
+            {areaMode!=='custom'?<>
+              <div className="focus-card"><MapPin size={17}/><div><strong>{focus.name}</strong><span>{focus.area}</span></div><Crosshair size={14} className="focus-cross"/></div>
+              {areaMode==='countries'&&region?.country&&admins.features.length>0&&<label className="admin-field">
+                <span>Administrative region</span><select aria-label="Administrative region" value={region.kind==='admin'?region.id:''}
+                  onChange={event=>{
+                    const id=event.target.value
+                    const match=id?admins.features.find(feature=>feature.properties.id===id):undefined
+                    const country=countryList.find(entry=>entry.kind==='country'&&entry.id===region.country)
+                    if(match)chooseRegion(match.properties,undefined,true)
+                    else if(!id&&country)chooseRegion(country,undefined,true)
+                  }}>
+                  <option value="">Whole country</option>
+                  {[...admins.features].sort((a,b)=>a.properties.name.localeCompare(b.properties.name)).map(feature=><option key={feature.properties.id} value={feature.properties.id}>{feature.properties.name}</option>)}
+                </select>
+              </label>}
+              <p className="filter-hint">{geographyError||(areaMode==='ecoregions'?(ecoList.length?'Select an ecoregion on the map or search by name.':'Loading WWF ecoregions…'):'Select a country on the map, then choose a state or province.')}</p>
+            </>:<div className="custom-tools">
+              <label className="radius-input"><span>Radius</span><RadiusField value={circlePreviewRadius??radius} onChange={setRadius}/><span>km</span></label>
+              <div className="custom-buttons">
+                <Button aria-pressed={tool==='circle'} onClick={()=>{setMeasuring(false);setTool(tool==='circle'?null:'circle')}}><Circle size={13}/> Radial Circle</Button>
+                <Button aria-pressed={tool==='lasso'} onClick={()=>{setMeasuring(false);setTool(tool==='lasso'?null:'lasso')}}><Lasso size={13}/> Freehand Lasso</Button>
+                <Button onClick={()=>setDialog(true)}><MapPin size={13}/> Enter Lat/Lon</Button>
+                {aoi&&<Button onClick={()=>setSettings(current=>({...current,aoi:null}))}><X size={13}/> Clear Area</Button>}
+              </div>
+            </div>}
+          </>}
         </section>
         <section className="filter-section orbital-filters">
           <h3>Orbital pass <InfoTip label="Orbital pass" help="Filter detections by whether the satellite observed the area during a daytime or nighttime pass."/></h3>
@@ -553,20 +584,20 @@ export function App() {
         <div className="brand-copy"><h1>TELETRAAN-1</h1><div className="mono">WILDFIRE MISSION CONTROL</div></div>
       </div>
         <div className="header-tools">
-          <Button className="tool-button orbit-trigger" helpDelay={500} help="Start or stop a camera tour of the showcase regions." aria-label="3D Orbit Tour / Fly-Around" aria-pressed={orbiting&&!tour.current?.short} onClick={()=>orbit()}><CameraIcon size={15}/><span>{orbiting&&!tour.current?.short?"Tour "+tourStop+"/"+tour.current?.stops.length:"3D Orbit Tour"}</span></Button>
-          <Button className="tool-button" helpDelay={500} help="Fly over the four showcase regions in about ten seconds." aria-label="Demo flight over all four regions" aria-pressed={orbiting&&tour.current?.short===true} onClick={()=>orbit(true)}><Film size={15}/><span>{orbiting&&tour.current?.short?"Flight "+tourStop+"/"+tour.current.stops.length:"Demo flight"}</span></Button>
+          <Button className="tool-button orbit-trigger" helpDelay={500} help="Start or stop a camera tour of the showcase regions." aria-label="3D Orbit Tour / Fly-Around" disabled={!recordingReady&&!orbiting} aria-pressed={orbiting&&!tour.current?.short} onClick={()=>orbit()}><CameraIcon size={15}/><span>{orbiting&&!tour.current?.short?"Tour "+tourStop+"/"+tour.current?.stops.length:"3D Orbit Tour"}</span></Button>
+          <Button className="tool-button" helpDelay={500} help="Fly over the four showcase regions in about ten seconds." aria-label="Demo flight over all four regions" disabled={!recordingReady&&!orbiting} aria-pressed={orbiting&&tour.current?.short===true} onClick={()=>orbit(true)}><Film size={15}/><span>{orbiting&&tour.current?.short?"Flight "+tourStop+"/"+tour.current.stops.length:"Demo flight"}</span></Button>
           <Button className="tool-button ecosystem-button" helpDelay={500} help="Show or hide peatlands, protected areas, and the Chornobyl Exclusion Zone on the map." aria-label="Peatlands & Protected Areas Overlay" aria-pressed={options.ecosystems}
             onClick={()=>setSettings(current=>({...current,options:{...current.options,ecosystems:!current.options.ecosystems}}))}><Leaf size={15}/><span>Peatlands &amp; Protected Areas</span></Button>
           <Button className="tool-button" helpDelay={500} help="Activate the ruler, then drag between two points on the map to measure the distance." aria-label="Ruler" aria-pressed={measuring} onClick={()=>{setTool(null);setMeasuring(value=>!value)}}><Ruler size={15}/><span>Ruler</span></Button>
           </div>
         <div className="header-pins">
-          <Button className="tool-button" helpDelay={500} help="Save the current map view, date range, and filters as a pin." aria-label="Save pin" onClick={()=>{setPinMenu(false);setPinName('');setPinDialog(true)}}><BookmarkPlus size={15}/></Button>
+          {!recordingMode&&<Button className="tool-button" helpDelay={500} help="Save the current map view, date range, and filters as a pin." aria-label="Save pin" onClick={()=>{setPinMenu(false);setPinName('');setPinDialog(true)}}><BookmarkPlus size={15}/></Button>}
           <div className="pin-dock" ref={pinDock}>
             <Button className="tool-button" helpDelay={500} help="Open your saved views and the built-in scenarios." aria-label="Open saved pins" aria-expanded={pinMenu} onClick={()=>setPinMenu(value=>!value)}><Bookmark size={15}/><span>Pins</span></Button>
             {pinMenu&&<div className="pin-list" aria-label="Saved pins">
-              {pins.length?pins.map(pin=><div className="pin-row" key={pin.id}>
+              {visiblePins.length?visiblePins.map(pin=><div className="pin-row" key={pin.id}>
                 <button type="button" onClick={()=>restorePin(pin)}>{pin.name}</button>
-                <button type="button" className="pin-delete" aria-label={'Delete pin '+pin.name} title={'Delete '+pin.name} onClick={()=>deletePin(pin.id)}><X size={14}/></button>
+                {!recordingMode&&<button type="button" className="pin-delete" aria-label={'Delete pin '+pin.name} title={'Delete '+pin.name} onClick={()=>deletePin(pin.id)}><X size={14}/></button>}
               </div>):<p>No saved pins</p>}
             </div>}
           </div>
@@ -633,8 +664,8 @@ export function App() {
               </p>}
             </div>
           </section>
-          {historical&&actual.error&&<p className="sensor-note" role="alert">{actual.error} <Button onClick={actual.retry}>Retry</Button></p>}
-          {historical&&!actual.days&&!actual.error&&<p className="sensor-note" role="status">Loading the 2000–2025 archive…</p>}
+          {historical&&actual.error&&<p className="sensor-note" role="alert">{actual.error} <Button onClick={recording.error?recording.retry:actual.retry}>Retry</Button></p>}
+          {historical&&!actual.days&&!actual.error&&<p className="sensor-note" role="status">{recordingMode?'Preparing the four recording regions…':'Loading the 2000–2025 archive…'}</p>}
           {historical&&actual.mapDays?.every(day=>day.rows.length===0)&&actual.days&&<p className="sensor-note">No detections in this area for {hasSelectedDay?date:mapFrom+' – '+mapTo} and the selected pass.
             {nearestObserved&&<> <Button onClick={()=>selectDate(nearestObserved,true)}>Go to {nearestObserved}</Button></>}
           </p>}

@@ -30,7 +30,7 @@ export function chernobylPinBounds(focus:Focus,aoi:Aoi|null):MapBounds|undefined
     return chernobylEventBounds
 }
 
-const defaults:Pin[]=scenarios.map(focus=>{
+export const builtInPins:Pin[]=scenarios.map(focus=>{
   const aoi=focus.id==='chernobyl'?chernobylArea:null
   return {id:'demo-'+focus.id,name:focus.short,snapshot:{
     ...initialSnapshot,focus,date:focus.date,from:focus.event.date_range[0],to:focus.event.date_range[1],
@@ -42,13 +42,13 @@ const storageKey='teletraan-1-pins-v1'
 export function readPins():Pin[] {
   try {
     const value=localStorage.getItem(storageKey)
-    if (value===null) return defaults
+    if (value===null) return builtInPins
     const stored:unknown=JSON.parse(value)
     if (Array.isArray(stored) && stored.every(pin=>typeof pin?.id==='string'&&typeof pin?.name==='string'&&pin.snapshot?.focus&&pin.snapshot?.camera)) {
-      return stored.map(pin=>defaults.find(builtin=>builtin.id===pin.id)??pin)
+      return stored.map(pin=>builtInPins.find(builtin=>builtin.id===pin.id)??pin)
     }
   } catch { /* use the built-in scenarios if storage is unavailable */ }
-  return defaults
+  return builtInPins
 }
 export function writePins(pins:Pin[]) {
   try { localStorage.setItem(storageKey,JSON.stringify(pins)); return true } catch { return false }

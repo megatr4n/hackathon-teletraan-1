@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { MultiPolygon, Polygon } from 'geojson'
 import { areaPolygon, firstDate, lastDate, type MapCell, type Coord, type Pass } from './data'
 import { calibration, harmonizeHistoricalCount, historicalCountPlatform, periodFrpMinimumDays } from './calibration'
@@ -73,42 +73,52 @@ type CellRow = Metrics & {
 export const gridParams='square_km=3'
 
 type MapDay = {date:string;rows:CellRow[];complete:boolean}
+export type PreparedHistory = {selection:Selection;days:Day[];mapDays:MapDay[]}
 
-export function useHistorical(enabled:boolean, request:string, date:string) {
+export async function loadHistoricalSelection(request:string,signal:AbortSignal):Promise<Selection> {
+  const response=await historicalFetch('/queries',{
+    method:'POST',headers:{'Content-Type':'application/json'},body:request,signal,
+  })
+  return response.json()
+}
+
+export async function loadHistoricalCalendar(queryId:string,signal:AbortSignal):Promise<Day[]> {
+  const response=await historicalFetch('/queries/'+queryId+'/calendar',{signal})
+  const calendar:{days:Day[]}=await response.json()
+  return calendar.days
+}
+
+export function useHistorical(enabled:boolean, request:string, date:string, prepared?:PreparedHistory) {
   const [query,setQuery]=useState<{key:string; days:Day[]}|null>(null)
   const [created,setCreated]=useState<{key:string; selection:Selection}|null>(null)
   const [activeDay,setActiveDay]=useState<{key:string; value:Day}|null>(null)
   const [error,setError]=useState<{key:string; message:string}|null>(null)
   const [attempt,retry]=useState(0)
   const key=request+'\n'+attempt
-  const current=enabled&&query?.key===key?query:null
-  const selection=enabled&&created?.key===key?created.selection:undefined
+  const days=enabled?(prepared?.days??(query?.key===key?query.days:undefined)):undefined
+  const selection=enabled?(prepared?.selection??(created?.key===key?created.selection:undefined)):undefined
   const dayKey=key+'\n'+date
   useEffect(()=>{
-    if(!enabled)return
+    if(!enabled||prepared)return
     const controller=new AbortController()
     const signal=controller.signal
     const run=async()=>{
-      const response=await historicalFetch('/queries',{
-        method:'POST',headers:{'Content-Type':'application/json'},body:request,signal,
-      })
-      const selection:Selection=await response.json()
+      const selection=await loadHistoricalSelection(request,signal)
       if(!signal.aborted)setCreated({key,selection})
     }
     const timer=window.setTimeout(()=>void run().catch(problem=>{
       if(!signal.aborted)setError({key,message:String(problem.message)})
     }),200)
     return ()=>{clearTimeout(timer);controller.abort()}
-  },[enabled,key,request])
+  },[enabled,key,request,prepared])
   const queryId=selection?.query_id
-  const calendarReady=Boolean(current)
+  const calendarReady=Boolean(days)
   useEffect(()=>{
     if(!queryId||calendarReady)return
     const controller=new AbortController()
     const signal=controller.signal
-    void historicalFetch('/queries/'+queryId+'/calendar',{signal})
-      .then(response=>response.json())
-      .then(calendar=>{if(!signal.aborted)setQuery({key,days:calendar.days})})
+    void loadHistoricalCalendar(queryId,signal)
+      .then(days=>{if(!signal.aborted)setQuery({key,days})})
       .catch(problem=>{if(!signal.aborted)setError({key,message:String(problem.message)})})
     return ()=>controller.abort()
   },[queryId,calendarReady,key])
@@ -121,7 +131,7 @@ export function useHistorical(enabled:boolean, request:string, date:string) {
       .catch(()=>{}) // The calendar can still supply the selected day's summary.
     return ()=>controller.abort()
   },[queryId,date,dayKey,calendarReady])
-  return {selection,key,days:current?.days,day:current?.days.find(row=>row.date===date)??(activeDay?.key===dayKey?activeDay.value:undefined),
+  return {selection,key,days,day:days?.find(row=>row.date===date)??(activeDay?.key===dayKey?activeDay.value:undefined),
     error:error?.key===key?error.message:null,retry:()=>retry(value=>value+1)}
 }
 
@@ -138,12 +148,18 @@ export async function loadHistoricalCells(queryId:string,date:string,signal:Abor
   return {rows,complete:cursor===null}
 }
 
-export function useHistoricalMap(enabled:boolean,queryId:string|undefined,key:string,mapFrom:string,mapTo:string) {
+export function useHistoricalMap(enabled:boolean,queryId:string|undefined,key:string,mapFrom:string,mapTo:string,preparedDays?:MapDay[]) {
   const cellCache=useRef({queryId:'',days:new Map<string,MapDay>()})
   const [map,setMap]=useState<{key:string;days:MapDay[]}>()
   const [error,setError]=useState<{key:string;message:string}>()
   const mapKey=key+'\n'+mapFrom+'\n'+mapTo
-  const visible=enabled&&map?.key===mapKey?map:undefined
+  const preloaded=useMemo(()=>{
+    if(!enabled||!preparedDays)return undefined
+    const dates=datesInRange(mapFrom,mapTo)
+    const days=preparedDays.filter(day=>day.date>=mapFrom&&day.date<=mapTo)
+    return days.length===dates.length?{key:mapKey,days}:undefined
+  },[enabled,mapFrom,mapTo,mapKey,preparedDays])
+  const visible=preloaded??(enabled&&map?.key===mapKey?map:undefined)
   useEffect(()=>{
     if(!enabled||!queryId||visible)return
     const controller=new AbortController()
@@ -151,7 +167,7 @@ export function useHistoricalMap(enabled:boolean,queryId:string|undefined,key:st
     if(cellCache.current.queryId!==queryId)cellCache.current={queryId,days:new Map()}
     const cached=cellCache.current.days
     const fetchDay=async(day:string):Promise<MapDay>=>{
-      const previous=cached.get(day)
+      const previous=cached.get(day)??preparedDays?.find(entry=>entry.date===day)
       if(previous)return previous
       const result=await loadHistoricalCells(queryId,day,signal)
       const entry={date:day,...result}
@@ -178,7 +194,7 @@ export function useHistoricalMap(enabled:boolean,queryId:string|undefined,key:st
       if(!signal.aborted)setError({key:mapKey,message:problem instanceof Error?problem.message:'Historical map data unavailable'})
     })
     return ()=>controller.abort()
-  },[enabled,queryId,mapFrom,mapTo,mapKey,visible])
+  },[enabled,queryId,mapFrom,mapTo,mapKey,preparedDays,visible])
   return {mapDays:visible?.days,complete:visible?.days.every(day=>day.complete),
     error:enabled&&error?.key===mapKey?error.message:null}
 }
