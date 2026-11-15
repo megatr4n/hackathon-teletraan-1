@@ -9,7 +9,7 @@ import { calendarWeeks, datesInRange, nextWeekDate, sumMapCells, summarizeWeek, 
 import { archiveDates, observations } from './observations'
 import { countryOptions, emptyRegions, focusForRegion, geography, type AreaMode, type Region, type RegionCollection, type RegionFeature } from './geography'
 import { MapStage, type Tool } from './MapStage'
-import { chernobylPinBounds, initialSnapshot, readPins, writePins, type Camera, type Pin, type Snapshot } from './pins'
+import { chernobylPinBounds, dateRangeFor, initialSnapshot, readPins, writePins, type Camera, type Pin, type Snapshot } from './pins'
 import { Timeline } from './Timeline'
 import { Button, InfoTip, Segmented, frpHelp, hotspotHelp, zScoreHelp } from './ui'
 import type { HistoricalReport } from './statisticalReport'
@@ -98,7 +98,8 @@ function SensorRow({label,value,unit,active}:{label:string;value:string;unit?:st
 
 export function App() {
   const [settings,setSettings]=useState(()=>snapshotFromUrl())
-  const {focus,region,date,from,to,pass,harmonized,areaMode,aoi,radius,query,options,metric,calendarView}=settings
+  const {focus,region,date,pass,harmonized,areaMode,aoi,radius,query,options,metric,calendarView}=settings
+  const {from,to}=dateRangeFor(settings)
   const camera=useRef(settings.camera)
   const [command,setCommand]=useState<CameraCommand|null>(()=>settings===initialSnapshot?null:{
     camera:settings.camera,duration:0,
@@ -202,7 +203,9 @@ export function App() {
   const fireZones=useFireZones(zonesRequested&&(archive.selection||archive.error)
     ?JSON.stringify({area:historicalArea(settings)}):undefined,archive.selection?.dataset_manifest_sha256)
   const zonesActive=zonesRequested&&Boolean(fireZones.data?.features.length)
-  const mapObservations=useHistoricalMap(historical&&!zonesActive,archive.selection?.query_id,archive.key,mapFrom,mapTo)
+  const calendarSettled=Boolean(archive.days||archive.error)
+  const mapObservations=useHistoricalMap(historical&&!zonesActive&&calendarSettled,
+    archive.selection?.query_id,archive.key,mapFrom,mapTo)
   const actual={...archive,...mapObservations,error:archive.error??mapObservations.error}
   const cells=useMemo(()=>{
     if(historical)return sumMapCells(actual.mapDays?.map(day=>historicalCells(day.rows,day.date,harmonized))??[])
@@ -301,7 +304,7 @@ export function App() {
   useEffect(()=>{
     if(!playing)return
     if(historical&&!(zonesActive?actual.days:actual.mapDays))return
-    const timer=window.setTimeout(()=>setSettings(current=>({...current,date:nextWeekDate(current.date,current.from,current.to)})),460)
+    const timer=window.setTimeout(()=>setSettings(current=>({...current,date:nextWeekDate(current.date,from,to)})),460)
     return ()=>clearTimeout(timer)
   },[playing,from,to,date,historical,actual.days,actual.mapDays,zonesActive])
   useEffect(()=>{
@@ -343,13 +346,22 @@ export function App() {
   function selectDate(value:string,recenter=false,daily=true) {
     stopTour(false)
     setPlaying(false)
-    setSettings(current=>({...current,date:clampDate(value,current.from,current.to),granularity:daily?'day':undefined}))
+    setSettings(current=>({...current,date:clampDate(value,from,to),granularity:daily?'day':undefined}))
     if(recenter){setOrbiting(false);setCommand({camera:{lon:focus.center[0],lat:focus.center[1]},duration:420})}
   }
   function range(start:string,end:string) {
     stopTour(false)
-    setSettings(current=>({...current,from:start,to:end,date:clampDate(current.date,start,end),
+    setSettings(current=>({...current,from:start,to:end,fullArchive:false,date:clampDate(current.date,start,end),
       granularity:current.date<start||current.date>end?undefined:current.granularity}));setPlaying(false)
+  }
+  function toggleArchive() {
+    stopTour(false)
+    setPlaying(false)
+    setSettings(current=>{
+      if(!current.fullArchive)return {...current,fullArchive:true}
+      const date=clampDate(current.date,current.from,current.to)
+      return {...current,fullArchive:false,date,granularity:date===current.date?current.granularity:undefined}
+    })
   }
   function updateArea(area:Aoi) {
     setSettings(current=>({...current,aoi:area,areaMode:'custom',region:null,radius:area.type==='circle'?area.radius:current.radius}))
@@ -721,8 +733,10 @@ export function App() {
     </div>
 
     <Timeline date={date} daySelected={hasSelectedDay} from={from} to={to} playing={playing}
+      fullArchive={Boolean(settings.fullArchive)} onToggleArchive={toggleArchive}
       onPlay={()=>{stopTour(false);setSettings(current=>({...current,granularity:undefined}));setPlaying(value=>!value)}}
       onDay={value=>selectDate(value,true)} onWeek={value=>selectDate(value,false,false)} series={series} historicalCalendar={historicalCalendar} historyReady={Boolean(actual.days)} harmonized={harmonized}
+      historyError={historical&&Boolean(archive.error)}
       onCalibration={value=>setSettings(current=>({...current,harmonized:value}))} onRange={range} metric={metric} view={calendarView}
       onMetric={value=>setSettings(current=>({...current,metric:value}))} onView={value=>setSettings(current=>({...current,calendarView:value}))}/>
     </div>

@@ -1,4 +1,4 @@
-"""Read-only FIRMS observations from a verified portable release."""
+"""Read-only FIRMS observations from the published portable release."""
 
 import hashlib
 import json
@@ -18,6 +18,7 @@ from shapely.geometry import shape
 
 
 REPO = Path(__file__).resolve().parents[3]
+DATA_PATH_FILE = REPO / "data-path.txt"
 GEOGRAPHY = REPO / "frontend/public/geography"
 GEO_VERSION = "firms-geography-v1"
 METHOD = "firms-canonical-v1"
@@ -40,15 +41,18 @@ class DatasetUnavailable(Exception):
 
 
 class Release:
-    def __init__(self, root: Path):
+    def __init__(self, root: Path, *, require_verified: bool = True):
         manifest_bytes = (root / "RELEASE.json").read_bytes()
         self.digest = hashlib.sha256(manifest_bytes).hexdigest()
-        if (root / ".verified-release").read_text().strip() != self.digest:
-            raise DatasetUnavailable("Release has not been verified by the importer")
         self.manifest = json.loads(manifest_bytes)
         trusted = json.loads((REPO / "docs/data-release/RELEASE.json").read_bytes())
         if self.manifest != trusted:
             raise DatasetUnavailable("Manifest differs from the published release")
+        marker = root / ".verified-release"
+        if require_verified and not marker.is_file():
+            raise DatasetUnavailable("Release has not been verified by the importer")
+        if marker.is_file() and marker.read_text().strip() != self.digest:
+            raise DatasetUnavailable("Release verification marker does not match its manifest")
         self.id = self.manifest["release"]
         self.partitions = {}
         for entry in self.manifest["files"]:
@@ -77,18 +81,36 @@ class Release:
 
 
 @lru_cache(maxsize=4)
-def open_release(root):
+def open_release(root, *, require_verified=True):
     try:
-        return Release(root)
+        return Release(root, require_verified=require_verified)
     except (OSError, ValueError, KeyError) as error:
-        raise DatasetUnavailable("A verified portable release is required") from error
+        raise DatasetUnavailable("Could not read the published portable release") from error
+
+
+def local_release_path():
+    try:
+        text = DATA_PATH_FILE.read_text(encoding="utf-8-sig").strip()
+    except (OSError, UnicodeError) as error:
+        raise DatasetUnavailable("Set the extracted data folder path in data-path.txt") from error
+    if len(text.splitlines()) != 1:
+        raise DatasetUnavailable("Enter one folder path on a single line in data-path.txt")
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in ('"', "'"):
+        text = text[1:-1]
+    try:
+        root = (REPO / Path(text).expanduser()).resolve()
+        if (root / "RELEASE.json").is_file():
+            return root
+    except (OSError, ValueError, RuntimeError) as error:
+        raise DatasetUnavailable("The path in data-path.txt could not be opened") from error
+    raise DatasetUnavailable("data-path.txt must point to the extracted folder containing RELEASE.json")
 
 
 def active_release():
     root = os.getenv("FIRMS_DATA_ROOT")
-    if not root:
-        raise DatasetUnavailable("Set FIRMS_DATA_ROOT to an imported release directory")
-    return open_release(Path(root).resolve())
+    if root:
+        return open_release(Path(root).resolve())
+    return open_release(local_release_path(), require_verified=False)
 
 
 @lru_cache(maxsize=64)

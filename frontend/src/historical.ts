@@ -102,6 +102,7 @@ export function useHistorical(enabled:boolean, request:string, date:string) {
   },[enabled,key,request])
   const queryId=selection?.query_id
   const calendarReady=Boolean(current)
+  const calendarError=error?.key===key?error.message:null
   useEffect(()=>{
     if(!queryId||calendarReady)return
     const controller=new AbortController()
@@ -113,16 +114,16 @@ export function useHistorical(enabled:boolean, request:string, date:string) {
     return ()=>controller.abort()
   },[queryId,calendarReady,key])
   useEffect(()=>{
-    if(!queryId||calendarReady)return
+    if(!queryId||!calendarError)return
     const controller=new AbortController()
     void historicalFetch('/queries/'+queryId+'/days/'+date+'?include_z_score=false',{signal:controller.signal})
       .then(response=>response.json())
       .then(value=>{if(!controller.signal.aborted)setActiveDay({key:dayKey,value})})
-      .catch(()=>{}) // The calendar can still supply the selected day's summary.
+      .catch(()=>{}) // The calendar error already provides a retry action.
     return ()=>controller.abort()
-  },[queryId,date,dayKey,calendarReady])
+  },[queryId,date,dayKey,calendarError])
   return {selection,key,days:current?.days,day:current?.days.find(row=>row.date===date)??(activeDay?.key===dayKey?activeDay.value:undefined),
-    error:error?.key===key?error.message:null,retry:()=>retry(value=>value+1)}
+    error:calendarError,retry:()=>retry(value=>value+1)}
 }
 
 export async function loadHistoricalCells(queryId:string,date:string,signal:AbortSignal) {

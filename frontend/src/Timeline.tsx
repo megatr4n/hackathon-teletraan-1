@@ -108,14 +108,18 @@ function CalendarScaleLegend({scale,metric,harmonized}:{scale:NonNullable<Return
   </div>
 }
 
-export function Timeline({date,daySelected,from,to,playing,onPlay,onDay,onWeek,series,historicalCalendar,historyReady,harmonized,onCalibration,onRange,metric,view,onMetric,onView}:{
+export function Timeline({date,daySelected,from,to,fullArchive,onToggleArchive,playing,onPlay,onDay,onWeek,series,historicalCalendar,historyReady,historyError,harmonized,onCalibration,onRange,metric,view,onMetric,onView}:{
   date:string;daySelected:boolean;from:string;to:string;playing:boolean;onPlay:()=>void;onDay:(date:string)=>void;onWeek:(date:string)=>void;
+  fullArchive:boolean;onToggleArchive:()=>void;
   series:DailyStats[];harmonized:boolean;onCalibration:(value:boolean)=>void;onRange:(from:string,to:string)=>void;metric:Metric;view:CalendarView;
   onMetric:(metric:Metric)=>void;onView:(view:CalendarView)=>void
   historicalCalendar?:HistoricalCalendar
   historyReady?:boolean
+  historyError?:boolean
 }) {
   const panel=useRef<HTMLElement>(null)
+  const grid=useRef<HTMLDivElement>(null)
+  const selectedWeek=useRef<HTMLButtonElement>(null)
   const details=useRef<HTMLElement>(null)
   const opener=useRef<HTMLButtonElement|null>(null)
   const [openWeek,setOpenWeek]=useState<number|null>(null)
@@ -175,6 +179,18 @@ export function Timeline({date,daySelected,from,to,playing,onPlay,onDay,onWeek,s
   const historicalDays=historicalCalendar?.[harmonized?'harmonized':'raw']
   const historical=historicalDays!==undefined
   const min=weekIndex(from),max=weekIndex(to),value=weekIndex(date)
+  const collapsed=overlap===collapsedCalendar
+  useLayoutEffect(()=>{
+    const container=grid.current,week=selectedWeek.current
+    if(collapsed||!container||!week)return
+    const bounds=container.getBoundingClientRect(),target=week.getBoundingClientRect()
+    const headerHeight=container.querySelector('.week-columns')?.clientHeight??0
+    const yearWidth=week.parentElement?.querySelector('.year')?.clientWidth??0
+    if(target.top<bounds.top+headerHeight||target.bottom>bounds.top+container.clientHeight)
+      container.scrollTop+=target.top-bounds.top-container.clientHeight/2
+    if(target.left<bounds.left+yearWidth||target.right>bounds.left+container.clientWidth)
+      container.scrollLeft+=target.left-bounds.left-container.clientWidth/2
+  },[collapsed,value])
   const rangeFor=(week:CalendarWeek)=>weekRange(week,from,to)
   function chooseWeek(index:number,button?:HTMLButtonElement) {
     if(index<min||index>max)return
@@ -230,7 +246,11 @@ export function Timeline({date,daySelected,from,to,playing,onPlay,onDay,onWeek,s
         aria-valuemin={collapsedCalendar} aria-valuemax={limit} aria-valuenow={overlap}
         aria-valuetext={overlap===collapsedCalendar?'Calendar collapsed':undefined} tabIndex={0} onKeyDown={resizeWithKeyboard}/>
       <div className="timeline-title"><span className="section-icon"><CalendarDays size={16}/></span><div><h2>Burning activity calendar</h2><span className="mono">2000–2025 ARCHIVE</span></div></div>
-      <DateRangeFields from={from} to={to} onRange={onRange}/>
+      <div className="timeline-dates">
+        <DateRangeFields from={from} to={to} onRange={onRange}/>
+        <Button className="archive-toggle" aria-pressed={fullArchive}
+          title="Use all archive dates. Press again to restore your date range." onClick={onToggleArchive}>Full archive</Button>
+      </div>
       <div className="timeline-calibration">
           <div className="timeline-calibration-label">Intercalibration
             <InfoTip label="Intercalibration" help={(historical
@@ -252,9 +272,9 @@ export function Timeline({date,daySelected,from,to,playing,onPlay,onDay,onWeek,s
         </div>
         <div className="timeline-note">
           {view==='grid'&&activity?.weekScale&&<CalendarScaleLegend scale={activity.weekScale} metric={metric} harmonized={harmonized}/>}
-          <p>{historical&&!historyReady?'Loading archive values…':metric==='z'?
+          {historyError?<p role="alert">Archive values unavailable.</p>:<p>{historical&&!historyReady?'Loading archive values…':metric==='z'?
             'Each week shows the daily Z-score farthest from zero. Blue is below baseline.':
-            'Monday–Sunday totals. Hover for coverage, or open a week to select a day.'}</p>
+            'Monday–Sunday totals. Hover for coverage, or open a week to select a day.'}</p>}
           {metric==='frp'&&view==='grid'&&harmonized&&<div className="frp-adjustment-key">
             <span>Blue edge · lower FRP</span><span>Amber edge · higher FRP</span>
           </div>}
@@ -290,7 +310,7 @@ export function Timeline({date,daySelected,from,to,playing,onPlay,onDay,onWeek,s
       </div>
       {metric!=='z'&&<small>Daily colors use a separate daily scale.</small>}
     </section>}
-    <div className="daily-calendar" hidden={overlap===collapsedCalendar} tabIndex={0} aria-label="Weekly archive, 2000 to 2025"
+    <div ref={grid} className="daily-calendar" hidden={collapsed} tabIndex={0} aria-label="Weekly archive, 2000 to 2025"
       onKeyDown={event=>{
         if(event.key!=='ArrowLeft'&&event.key!=='ArrowRight')return
         event.preventDefault()
@@ -314,6 +334,7 @@ export function Timeline({date,daySelected,from,to,playing,onPlay,onDay,onWeek,s
               (delta<0?'lower':'higher'):undefined
             const title=disabled?week.from+' – '+week.to+' · Outside selected dates':weekLabel(rangeFor(week),reading,metric,comparison)
             return <button type="button" className="calendar-week" key={week.index} data-week={week.from} data-frp-adjustment={adjustment}
+              ref={value===week.index?selectedWeek:undefined}
               disabled={disabled} aria-label={title} title={title}
               aria-pressed={value===week.index} aria-haspopup="dialog" aria-expanded={shownWeek?.index===week.index}
               style={{gridColumn:column+2,backgroundColor:view==='grid'?paint(reading.value,getHeat(reading.value,true),metric,historical):undefined}}
