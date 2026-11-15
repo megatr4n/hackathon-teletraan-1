@@ -772,9 +772,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 .mission-workspace .workbench>.filters,.mission-workspace .workbench>.analytics { grid-row:1 }
 .mission-workspace .workbench>.filters { margin-bottom:var(--calendar-overlay); overflow:visible }
 .workbench>.filters .query-filter-sections>.filter-section {
-  flex:1 0 auto; display:flex; flex-direction:column; justify-content:space-evenly; gap:4px;
+  flex:none; display:flex; flex-direction:column; gap:4px; padding-block-end:8px;
 }
-.workbench>.filters .query-filter-sections>.orbital-filters { justify-content:center; border-bottom:0 }
+.workbench>.filters .query-filter-sections>.orbital-filters { padding-block-start:8px; border-bottom:0 }
 .filters .orbital-filters h3 { margin-bottom:0 }
 .workbench>[hidden] { display:none }
 .mission-workspace .map-stage { grid-area:1 / 2; margin-bottom:var(--calendar-overlay) }
