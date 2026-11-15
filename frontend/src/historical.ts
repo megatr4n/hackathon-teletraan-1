@@ -71,10 +71,9 @@ type CellRow = Metrics & {
 
 export const gridParams='square_km=3'
 
-export function useHistorical(enabled:boolean, request:string, date:string, showDailyCells:boolean) {
+export function useHistorical(enabled:boolean, request:string, date:string) {
   const [query,setQuery]=useState<{key:string; days:Day[]}|null>(null)
   const [created,setCreated]=useState<{key:string; selection:Selection}|null>(null)
-  const [map,setMap]=useState<{key:string; rows:CellRow[]; complete:boolean}|null>(null)
   const [activeDay,setActiveDay]=useState<{key:string; value:Day}|null>(null)
   const [error,setError]=useState<{key:string; message:string}|null>(null)
   const [attempt,retry]=useState(0)
@@ -82,7 +81,6 @@ export function useHistorical(enabled:boolean, request:string, date:string, show
   const current=enabled&&query?.key===key?query:null
   const selection=enabled&&created?.key===key?created.selection:undefined
   const mapKey=key+'\n'+date
-  const visible=enabled&&map?.key===mapKey?map:null
   useEffect(()=>{
     if(!enabled)return
     const controller=new AbortController()
@@ -120,30 +118,43 @@ export function useHistorical(enabled:boolean, request:string, date:string, show
       .catch(()=>{}) // The calendar can still supply the selected day's summary.
     return ()=>controller.abort()
   },[queryId,date,mapKey,calendarReady])
+  return {selection,key,days:current?.days,day:current?.days.find(row=>row.date===date)??(activeDay?.key===mapKey?activeDay.value:undefined),
+    error:error?.key===key?error.message:null,retry:()=>retry(value=>value+1)}
+}
+
+export async function loadHistoricalCells(queryId:string,date:string,signal:AbortSignal) {
+  const base='/queries/'+queryId+'/days/'+date+'/cells?'+gridParams+'&limit=5000'
+  const rows:CellRow[]=[]
+  let cursor:string|null=null
+  do{
+    const response=await historicalFetch(base+(cursor?'&cursor='+encodeURIComponent(cursor):''),{signal})
+    const result:{cells:CellRow[];next_cursor:string|null}=await response.json()
+    rows.push(...result.cells)
+    cursor=result.next_cursor
+  }while(cursor&&rows.length<20000)
+  return {rows,complete:cursor===null}
+}
+
+export function useDailyCells(enabled:boolean,queryId:string|undefined,key:string,date:string) {
+  const [result,setResult]=useState<{key:string;rows:CellRow[];complete:boolean}>()
+  const [error,setError]=useState<{key:string;message:string}>()
+  const mapKey=key+'\n'+date
+  const visible=enabled&&result?.key===mapKey?result:undefined
   useEffect(()=>{
-    if(!showDailyCells||!queryId||visible)return
+    if(!enabled||!queryId||visible)return
     const controller=new AbortController()
     const signal=controller.signal
-    const run=async()=>{
-      const base='/queries/'+queryId+'/days/'+date+'/cells?'+gridParams+'&limit=5000'
-      const rows:CellRow[]=[]
-      let cursor:string|null=null
-      do{
-        const response=await historicalFetch(base+(cursor?'&cursor='+encodeURIComponent(cursor):''),{signal})
-        const result:{cells:CellRow[];next_cursor:string|null}=await response.json()
-        rows.push(...result.cells)
-        cursor=result.next_cursor
-      }while(cursor&&rows.length<20000)
-      if(!signal.aborted)setMap({key:mapKey,rows,complete:cursor===null})
-    }
-    void run().catch(problem=>{
+    void loadHistoricalCells(queryId,date,signal).then(cells=>{
+      if(!signal.aborted){
+        setResult({key:mapKey,...cells})
+        setError(undefined)
+      }
+    },problem=>{
       if(!signal.aborted)setError({key:mapKey,message:String(problem.message)})
     })
     return ()=>controller.abort()
-  },[showDailyCells,queryId,date,mapKey,visible])
-  return {selection, days:current?.days, day:current?.days.find(row=>row.date===date)??(activeDay?.key===mapKey?activeDay.value:undefined),
-    rows:visible?.rows, complete:visible?.complete,
-    error:error?.key===key||error?.key===mapKey?error.message:null, retry:()=>retry(value=>value+1)}
+  },[enabled,queryId,date,mapKey,visible])
+  return {rows:visible?.rows,complete:visible?.complete,error:enabled&&error?.key===mapKey?error.message:null}
 }
 
 export const snppArchiveStart='2012-01-20'

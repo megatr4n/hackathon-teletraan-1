@@ -12,7 +12,7 @@ import { initialSnapshot, type Camera, type MapOptions } from './pins'
 import { cameraBetween, demoTransferDuration, hotspotShots, transferCamera, transferDuration, type CameraCommand, type Shot } from './cameraTour'
 import { StarField } from './StarField'
 import type { SpaceTransfer } from './orbitalScene'
-import { useFireZones, zoneLevels } from './fireZones'
+import { zoneLevels, type FireZonesState } from './fireZones'
 
 const SpaceCanvas = lazy(() => import('./SpaceCanvas').then(module => ({default:module.SpaceCanvas})))
 let keplerModule:Promise<typeof import('./kepler')>|undefined
@@ -30,7 +30,7 @@ type Props = {
   countries:RegionCollection; admins:RegionCollection; ecoregions:RegionCollection; areaMode:AreaMode;
   selected:RegionFeature|undefined; onRegion:(region:RegionFeature,point?:Coord)=>void;
   measuring:boolean; orbiting:boolean; onTourEnd:()=>void; historical:boolean; playing:boolean;
-  zonesActive:boolean; onToggleFireZones:()=>void; fireZoneRequest?:string; fireZoneRelease?:string;
+  zonesActive:boolean; zonesRequested:boolean; onToggleFireZones:()=>void; fireZones:FireZonesState;
 }
 const empty: FeatureCollection = {type:'FeatureCollection',features:[]}
 const overlayFade={duration:450,delay:0}
@@ -142,13 +142,12 @@ function hazardShape(center:Coord,x:number,y:number,rx:number,ry:number,z:number
 
 export function MapStage({focus,date,cells,loadingCells,harmonized,aoi,tool,onArea,onCirclePreviewRadius,command,onCamera,options,onOptions,
   countries,admins,ecoregions,areaMode,selected,onRegion,measuring,orbiting,onTourEnd,historical,playing,
-  zonesActive,onToggleFireZones,fireZoneRequest,fireZoneRelease}:Props) {
+  zonesActive,zonesRequested,onToggleFireZones,fireZones}:Props) {
   const holder=useRef<HTMLDivElement>(null), map=useRef<maplibregl.Map|null>(null)
   const fire=useRef<FirePillars|null>(null), places=useRef<maplibregl.Marker[]>([])
   const [ready,setReady]=useState(false)
   const [camera,setCamera]=useState(initialSnapshot.camera)
   const [size,setSize]=useState({width:0,height:0})
-  const fireZones=useFireZones(zonesActive?fireZoneRequest:undefined,fireZoneRelease)
   const [trace,setTrace]=useState<[number,number][]>([])
   const [segments,setSegments]=useState<[Coord,Coord][]>([])
   const [draft,setDraft]=useState<[Coord,Coord]|null>(null)
@@ -583,18 +582,14 @@ export function MapStage({focus,date,cells,loadingCells,harmonized,aoi,tool,onAr
         <polygon points={trace.map(point=>point.join(',')).join(' ')} fill="#55c9e52a" stroke="#65d7f3" strokeDasharray="5 3" />
       </svg></div>}
     {tool && <div className="draw-hint"><Target size={14}/>{tool==='circle'?'Drag from the center to set the radius':'Drag to outline your area'}</div>}
-    {zonesActive?<div className="map-legend fire-zone-legend">
+    {zonesActive&&fireZones.data?<div className="map-legend fire-zone-legend">
       <div className="legend-title"><ShieldAlert size={13}/> HISTORICAL FIRE ZONES</div>
-      {fireZones.error?<p role="alert">{fireZones.error} <Button onClick={fireZones.retry}>Retry</Button></p>:
-        !fireZones.data?<p role="status">{fireZoneRequest?'Loading fire zones…':'Waiting for the calendar…'}</p>:<>
-          <p>MODIS · {fireZones.data.from.slice(0,4)}–{fireZones.data.to.slice(0,4)}</p>
-          {fireZones.data.features.length===0?<p role="status">No qualifying zones intersect this area.</p>:
-            <ul aria-label="Historical recurrence">
-              {Object.values(zoneLevels).map(({color,label})=><li key={label}><i style={{background:color}}/>{label}</li>)}
-            </ul>}
-          <p>Historical detections only. For preliminary site screening.</p>
-        </>}
-    </div>:<div className="map-legend">
+      <p>MODIS · {fireZones.data.from.slice(0,4)}–{fireZones.data.to.slice(0,4)}</p>
+      <ul aria-label="Historical recurrence">
+        {Object.values(zoneLevels).map(({color,label})=><li key={label}><i style={{background:color}}/>{label}</li>)}
+      </ul>
+      <p>Historical detections only. For preliminary site screening.</p>
+    </div>:<div className={zonesRequested?'map-legend fire-zone-legend':'map-legend'}>
       <div className="legend-title"><Layers3 size={13}/> FIRE RADIATIVE POWER <InfoTip label="Fire radiative power" help={frpHelp+' Taller pillars indicate higher FRP. The height scale compresses extremes so lower and moderate readings remain distinguishable.'}/></div>
       <div className="thermal-ramp" />
       <div className="legend-scale"><span>0</span><span>50</span><span>100</span><span>150+ MW</span></div>
@@ -602,6 +597,8 @@ export function MapStage({focus,date,cells,loadingCells,harmonized,aoi,tool,onAr
         {showDemoContours&&<div><i className="legend-demo-outline"/>Demo anomaly zones</div>}
         {(aoi||selected)&&<div><i className="legend-area-outline"/>Selected area</div>}
       </div>}
+      {zonesRequested&&(fireZones.error?<p role="alert">{fireZones.error} <Button onClick={fireZones.retry}>Retry</Button></p>:
+        <p role="status">{fireZones.data?'No qualifying zones intersect this area.':'Loading fire zones…'}</p>)}
     </div>}
     <div className="map-controls">
       <Button className="compass" aria-label="Reset bearing to true north" help="Rotate the map so true north points up." onClick={()=>changeCamera({bearing:0},450)}>
@@ -611,7 +608,7 @@ export function MapStage({focus,date,cells,loadingCells,harmonized,aoi,tool,onAr
         <Button help="Switch between an overhead view and a tilted view." aria-label="Toggle 2D / 3D" aria-pressed={camera.pitch>1} onClick={()=>changeCamera({pitch:camera.pitch>1?0:50},550)}><Box size={14}/>{camera.pitch>1?'3D':'2D'}</Button>
         <Button help="Switch between the basemap and satellite imagery." aria-label="Switch Map / Sat" aria-pressed={options.satellite} onClick={()=>onOptions({...options,satellite:!options.satellite})}>{options.satellite?<Satellite size={16}/>:<MapIcon size={16}/>}</Button>
         <Button help="Show or hide the grid used to aggregate nearby fire detections." aria-label="Toggle 3×3 km grid" aria-pressed={options.grid} onClick={()=>onOptions({...options,grid:!options.grid})}><Grid3X3 size={16}/></Button>
-        {historical&&<Button help="Show areas with recurring satellite fire detections across the archive." aria-label="Historical fire zones" aria-pressed={zonesActive}
+        {historical&&<Button help="Show areas with recurring satellite fire detections across the archive." aria-label="Historical fire zones" aria-pressed={zonesRequested}
           onClick={onToggleFireZones}><ShieldAlert size={16}/></Button>}
       </div>
       <div className="map-control-group">

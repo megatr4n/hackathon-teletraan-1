@@ -66,3 +66,5 @@ export function useFireZones(request:string|undefined, release:string|undefined)
     retry:()=>setAttempt(value=>value+1),
   }
 }
+
+export type FireZonesState = ReturnType<typeof useFireZones>
