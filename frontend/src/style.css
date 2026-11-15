@@ -744,7 +744,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 .mission-workspace .workbench[data-filters-open=false] { --left-panel:0px }
 .mission-workspace .workbench[data-analytics-open=false] { --right-panel:0px }
 .mission-workspace .workbench>.filters,.mission-workspace .workbench>.analytics { grid-row:1 }
-.workbench>.filters { overflow:auto }
+.mission-workspace .workbench>.filters { margin-bottom:var(--calendar-overlap); overflow:visible }
+.workbench>.filters .query-filter-sections>.filter-section { flex:none }
 .workbench>[hidden] { display:none }
 .mission-workspace .map-stage { grid-area:1 / 2; margin-bottom:var(--calendar-overlap) }
 .panel-toggle.button { position:absolute; top:19px; z-index:4; width:23px; height:58px; padding:0; color:#c1cddd; background:#151e2a; border:1px solid #455267 }
@@ -759,7 +760,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 @media(max-width:900px) {
   .mission-workspace .workbench { height:485px; min-height:0; grid-template-columns:0 minmax(0,1fr) 0 }
   .mission-workspace .workbench>.filters,.mission-workspace .workbench>.analytics { position:absolute; z-index:3; top:0; bottom:0; grid-area:auto; width:min(320px,calc(100% - 68px)) }
-  .mission-workspace .workbench>.filters { left:0 }
+  .mission-workspace .workbench>.filters { left:0; bottom:var(--calendar-overlap); margin-bottom:0 }
   .mission-workspace .workbench>.analytics { right:0; grid-template-rows:auto auto minmax(0,1fr) auto }
   .mission-workspace .panel-toggle[aria-expanded=true].panel-toggle-left { left:min(320px,calc(100% - 68px)) }
   .mission-workspace .panel-toggle[aria-expanded=true].panel-toggle-right { right:min(320px,calc(100% - 68px)) }
