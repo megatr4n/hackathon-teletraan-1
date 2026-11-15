@@ -15,10 +15,10 @@ The report follows the selected area, not the extent of the map viewport. In par
 ## Count graph requested for the export
 
 - Raw MODIS = sum of available Terra and Aqua detection records on the UTC date. If neither is observed, the result is null. Overpasses are not deduplicated into unique fires.
-- Harmonized Aqua MODIS = raw Aqua MODIS multiplied by the existing `K_COUNT[pass]` in `config/modis_viirs_coefficients.csv`. This derived estimate is available from **2002-07-04** on days with Aqua records.
+- Harmonized MODIS uses Terra records through **2002-07-03** and Aqua records from **2002-07-04**. Multiply that platform's daily detection count by `K_COUNT[pass]` from `config/modis_viirs_coefficients.csv`. The estimate is null on days without records from the selected platform.
 - S-NPP VIIRS = observed VIIRS detection records, available from the archive boundary **2012-01-20**. No value is drawn before that boundary; gaps remain null. MODIS is never substituted into this series.
-- Before Aqua enters the archive, only raw Terra MODIS has values. From the Aqua archive start, the chart also shows the Aqua estimate. From the VIIRS archive start, the chart also shows observed VIIRS.
-- Up to 120 requested days: daily observations. Longer periods: calendar-month mean daily values, divided by each series' **own number of days with records**. Partial months are retained. The availability plot and evidence JSON carry the relevant denominators. No smoothing or invented zeros are used.
+- The chart shows raw MODIS and a single harmonized series across the Terra-to-Aqua transition. From the VIIRS archive start, a third series shows observed VIIRS.
+- Up to 120 requested days: daily observations. Longer periods: calendar-month mean daily values, divided by each series' **own number of days with records**. Partial months are retained. A month crossing the Terra-to-Aqua transition uses the estimate from the correct platform on each day. The evidence JSON records the selected platform for each date and the number of available estimates for each month. No smoothing or invented zeros are used.
 - The monthly bin containing an archive boundary is placed on or after that date. Other monthly bins are plotted at the midpoint of their requested dates.
 
 Configured count coefficients (unchanged by this implementation):
@@ -29,12 +29,12 @@ Configured count coefficients (unchanged by this implementation):
 | day | 4.9919362253313935 |
 | night | 18.82703433766624 |
 
-The report multiplies the daily Aqua count by the coefficient for the selected pass. The two day/night factors are applied in their respective filtered reports.
+The historical panel, calendar and report use the same daily platform rule. The all-pass coefficient is 6.73297434273044 for both platforms in their respective periods. The day and night filters use their respective coefficients.
 
 ## PDF contents
 
 1. Selection, UTC period, actual bounds, source release, manifest SHA-256 and query ID.
-2. Raw Terra + Aqua MODIS, adjusted Aqua MODIS and observed VIIRS detection series.
+2. Raw Terra + Aqua MODIS, harmonized MODIS (Terra to Aqua) and observed VIIRS detection series.
 3. Raw FRP in separate Aqua, S-NPP and Terra panels, with a shared vertical scale.
 4. Detection-record availability by platform and counts of missing FRP records.
 5. Period totals, valid and missing FRP records, means, median, 95th percentile, peaks and the selected day.
@@ -75,7 +75,7 @@ Existing `day`, `period`, provenance and `methodology` fields are retained. Addi
 
 The selected day may lie outside the report subperiod, but must lie inside the parent query. PDF labels it separately. Missing bounds default to the parent query. Reversed/out-of-query bounds return HTTP 422. Both frontend and backend must be deployed for this export version; no migration or data regeneration is required.
 
-Evidence JSON uses `report_version: firms-evidence-v2`, the unchanged source response and deterministic derivations (count formula, selected and available coefficients, daily counts, chart bins, denominators and comparison statistics). It contains no access token or FIRMS API key.
+Evidence JSON uses `report_version: firms-evidence-v3`, the unchanged source response and deterministic derivations (count formula, selected and available coefficients, daily counts, chart bins, denominators and comparison statistics). It contains no access token or FIRMS API key.
 
 ## Verification and preview
 
@@ -96,7 +96,7 @@ node scripts/render-historical-report.mjs response.json report.pdf 'Actual area 
 
 The renderer uses the exact browser PDF builder and bundled font, producing a PDF and evidence JSON without a running browser or simulated data. A saved `/report-data` response is required. Render with Poppler for visual QA.
 
-Implementation checks include the 2002 Aqua and 2012 VIIRS boundaries, Aqua-only use of all three orbital-pass coefficients, missing VIIRS without fallback, missing FRP with valid counts, partial months, observed-day denominators, matched-day diagnostics, malformed/stale payload rejection, and the API-to-Parquet report period contract.
+Implementation checks include the 2002 Aqua and 2012 VIIRS boundaries, Terra-to-Aqua switching for all three orbital-pass coefficients and agreement between the panel and report, missing VIIRS without fallback, missing FRP with valid counts, partial months, observed-day denominators, matched-day diagnostics, malformed/stale payload rejection, and the API-to-Parquet report period contract.
 
 A real archive verification on the `ua-east` preset for April 2020 independently queried raw Parquet with DuckDB and matched all 90 platform/day records:
 

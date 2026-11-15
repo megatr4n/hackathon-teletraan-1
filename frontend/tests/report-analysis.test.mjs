@@ -5,6 +5,7 @@ const vite=await createServer({configFile:false,server:{middlewareMode:true,hmr:
 try{
   const {dailySeries,countBins,pairedCounts,validateReport,reportEvidence}=await vite.ssrLoadModule('/src/report/analysis.ts')
   const {calibration}=await vite.ssrLoadModule('/src/calibration.ts')
+  const {actualDay,historicalCalendarValue}=await vite.ssrLoadModule('/src/historical.ts')
   function fixture(start,n){
     const empty={detection_count:null,valid_frp_count:0,missing_frp_count:0,frp_sum_mw:null}
     const series=Array.from({length:n},(_,i)=>({date:new Date(Date.parse(start)+86400000*i).toISOString().slice(0,10),
@@ -43,7 +44,7 @@ try{
   const pair=pairedCounts(rows)
   assert.equal(pair.n,1);assert.equal(pair.rawAqua.mae,17);assert.equal(pair.rawAqua.meanDifference,-17);assert.equal(pair.rawAqua.wape,85)
   assert.equal(pairedCounts([]).rawAqua.wape,null)
-  assert.equal(pairedCounts([{date:'2020-01-01',raw:1,aqua:1,adjusted:2,viirs:0}]).rawAqua.wape,null)
+  assert.equal(pairedCounts([{date:'2020-01-01',raw:1,aqua:1,adjusted:2,adjustedPlatform:'aqua',viirs:0}]).rawAqua.wape,null)
   validateReport(r,r.report_start,r.report_end,r.query_id)
   const wrongMean=structuredClone(r);wrongMean.period[0].mean_observed_daily_frp_mw=999
   assert.throws(()=>validateReport(wrongMean,r.report_start,r.report_end),/mean disagrees/)
@@ -54,10 +55,26 @@ try{
   assert.throws(()=>validateReport({...r,series:r.series.slice(1)},r.report_start,r.report_end),/missing calendar/)
   assert.throws(()=>validateReport(r,r.report_start,r.report_end,'different'),/selection changed/)
   assert.throws(()=>validateReport({...r,series:undefined},r.report_start,r.report_end),/incomplete/)
-  const early=fixture('2002-07-03',2)
-  record(early,0,'terra',2);record(early,0,'aqua',99);record(early,1,'aqua',3)
-  assert.equal(dailySeries(early)[0].adjusted,null)
-  assert.equal(dailySeries(early)[1].adjusted,3*calibration.hotspots.all)
+  const early=fixture('2002-04-01',123)
+  const july3=early.series.findIndex(day=>day.date==='2002-07-03')
+  record(early,july3,'terra',2);record(early,july3,'aqua',99) // The Aqua archive starts on the following day.
+  record(early,july3+1,'terra',8);record(early,july3+1,'aqua',4)
+  record(early,july3+2,'terra',12) // Post-transition Terra is still raw MODIS.
+  const edge=early.series.slice(july3,july3+3)
+  for(const pass of ['all','day','night']){
+    const before=2*calibration.hotspots[pass],after=4*calibration.hotspots[pass]
+    const daily=dailySeries({...early,pass,series:edge})
+    assert.deepEqual(daily.map(d=>d.raw),[2,12,12])
+    assert.deepEqual(daily.map(d=>d.adjustedPlatform),['terra','aqua','aqua'])
+    assert.deepEqual(daily.map(d=>d.adjusted),[before,after,null])
+    assert.deepEqual(edge.map(day=>actualDay(day,pass).correctedCount),[before,after,null])
+  }
+  assert.equal(historicalCalendarValue(edge[0].date,actualDay(edge[0],'all'),'count',true).source,'Harmonized Terra MODIS (estimate)')
+  assert.equal(historicalCalendarValue(edge[1].date,actualDay(edge[1],'all'),'count',true).source,'Harmonized Aqua MODIS (estimate)')
+  const july=countBins(early).rows.find(row=>row.date==='2002-07-01')
+  assert.ok(Math.abs(july.adjusted-3*calibration.hotspots.all)<1e-10)
+  assert.equal(july.nAdjusted,2)
+  assert.equal(july.nAqua,1)
   const monthly=fixture('2011-12-01',123)
   record(monthly,0,'terra',2);record(monthly,1,'terra',6);record(monthly,1,'aqua',4)
   record(monthly,60,'snpp',10)
@@ -67,6 +84,7 @@ try{
   assert.equal(mb.rows[0].viirs,null);assert.equal(mb.rows[1].nViirs,1)
   assert.equal(mb.rows.at(-1).requested,1) // partial last month is retained
   const evidence=reportEvidence(monthly,'2026-11-15T00:00:00Z')
+  assert.equal(evidence.report_version,'firms-evidence-v3')
   assert.equal(evidence.derivations.counts.length,123)
   assert.equal(evidence.derivations.count_chart.rows[0].adjusted,4*calibration.hotspots.all)
   const {buildHistoricalPdf}=await vite.ssrLoadModule('/src/report/historicalPdf.ts')
@@ -76,5 +94,5 @@ try{
   const pdf=buildHistoricalPdf(empty,'Synthetic empty fixture - test only',font,'2026-11-15T00:00:00Z')
   assert.equal(pdf.getNumberOfPages(),9)
   assert.ok(pdf.output('arraybuffer').byteLength>1000)
-  console.log('Report checks passed: transition, no fallback, pass coefficients, gaps, invalid FRP, paired days, denominators, partial months and reconciliation.')
+  console.log('Report checks passed: Terra/Aqua and VIIRS boundaries, screen/PDF agreement, no fallback, pass coefficients, gaps, invalid FRP, paired days, denominators, partial months and reconciliation.')
 }finally{await vite.close()}
