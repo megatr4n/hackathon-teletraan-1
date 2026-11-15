@@ -5,6 +5,7 @@ import duckdb
 import hashlib
 import json
 import logging
+from app.services import climatology
 from app.services import historical_data as data
 from collections import OrderedDict
 from dataclasses import dataclass
@@ -113,12 +114,26 @@ class DailyObservation(BaseModel):
     platforms: list[PlatformDay]
 
 
+class ObservationScore(BaseModel):
+    z_score: float | None
+    z_score_status: Literal["available", "no_modis_frp", "insufficient_reference_years",
+                            "zero_reference_variance", "not_requested"]
+    z_score_reference_years: int
+    z_score_reference_days: int
+
+
+class CalendarDay(DailyObservation, ObservationScore):
+    pass
+
+
 class CalendarResponse(Provenance):
-    days: list[DailyObservation]
+    days: list[CalendarDay]
+    z_score_method: str
 
 
-class DayResponse(Provenance, DailyObservation):
+class DayResponse(Provenance, CalendarDay):
     platforms: list[PlatformDay]
+    z_score_method: str
 
 
 @dataclass(eq=False)
@@ -179,7 +194,7 @@ def dataset():
         "canonical_records": release.manifest["canonical_records"],
         "quality_policies": ["canonical"], "spatial_modes": ["exact"],
         "capabilities": {
-            "acquisition_coverage": False, "calibration": False, "z_score": False,
+            "acquisition_coverage": False, "calibration": False, "z_score": True,
             "forecast": False, "cells": False, "csv": False, "geojson": False,
         },
         "limits": {"max_days": MAX_DAYS, "query_ttl_seconds": TTL.total_seconds()},
@@ -194,6 +209,14 @@ def methodology():
         "frp_sum_mw": "Sum of finite positive FRP readings in MW; null when none have valid FRP.",
         "coverage": "A detection confirms records for its platform and day. Missing records imply unknown coverage.",
         "geometry": "Exact point inclusion relative to the supplied geometry; catalog boundaries are simplified.",
+        "climatology": {
+            "method_id": climatology.METHOD_ID, "window_days_each_side": climatology.WINDOW_DAYS,
+            "minimum_reference_years": climatology.MIN_REFERENCE_YEARS,
+            "definition": "Raw daily MODIS FRP compared with observed MODIS days from other years "
+                          "within the seasonal window, using sample standard deviation.",
+            "reference_period": data.RANGES["modis"],
+            "coverage": "Conditional on recorded FRP. Acquisition coverage is unavailable.",
+        },
         "fire_radiative_energy": None, "emissions": None,
     }
 
@@ -310,15 +333,45 @@ def range_rows(selection, start, end):
     return rows
 
 
+@lru_cache(maxsize=16)
+def calendar_scores(selection):
+    if not {"terra", "aqua"}.intersection(selection.request.platforms):
+        return {}
+    start, end = data.RANGES["modis"]
+    if selection.request.start <= start and selection.request.end >= end:
+        rows = calendar_rows(selection)
+    else:
+        rows = range_rows(selection, start, end)
+    observed = {}
+    for day, row in rows.items():
+        values = [entry["frp_sum_mw"] for entry in row["platforms"]
+                  if entry["platform"] in ("terra", "aqua") and entry["frp_sum_mw"] is not None]
+        if values:
+            observed[day] = sum(values)
+    return climatology.seasonal_scores(observed)
+
+
+def annotate_day(day, row, scores):
+    if scores is None:
+        result = climatology.score_result("not_requested")
+    else:
+        result = scores.get(day) or climatology.score_result("no_modis_frp")
+    return {**row, **result}
+
+
 @router.get("/queries/{query_id}/calendar", response_model=CalendarResponse)
-def calendar(query_id: str):
+def calendar(query_id: str, include_z_score: bool = True):
     selection = get_selection(query_id)
     rows = calendar_rows(selection)
-    return {**selection.metadata(), "days": list(rows.values())}
+    scores = calendar_scores(selection) if include_z_score else None
+    return {**selection.metadata(), "z_score_method": climatology.METHOD_ID,
+            "days": [annotate_day(day, row, scores) for day, row in rows.items()]}
 
 
 @router.get("/queries/{query_id}/days/{day}", response_model=DayResponse)
-def day_stats(query_id: str, day: date):
+def day_stats(query_id: str, day: date, include_z_score: bool = True):
     selection = get_selection(query_id, day)
     row = range_rows(selection, day, day)[day]
-    return {**selection.metadata(), **row}
+    scores = calendar_scores(selection) if include_z_score else None
+    return {**selection.metadata(), "z_score_method": climatology.METHOD_ID,
+            **annotate_day(day, row, scores)}
