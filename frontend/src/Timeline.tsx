@@ -86,7 +86,7 @@ function CalendarScaleLegend({scale,metric}:{scale:NonNullable<ReturnType<typeof
       })}
     </div>
     <span>≥ {formatBand(scale.lowerBounds[scale.lowerBounds.length-1])} {unit}</span>
-    <InfoTip label="Calendar color scale" help={(metric==='frp'?'FRP uses a smooth gradient between percentile breaks. ':'Hotspot counts use discrete percentile bands. ')+
+    <InfoTip label="Calendar color scale" help={(metric==='frp'?'Weekly FRP uses logarithmic interpolation between positive percentile breaks. ':'Hotspot counts use discrete percentile bands. ')+
       'Both modes share a scale computed from their positive values across this area and orbital pass. Hover a week for its total in the original units. Open the week to see daily values.'}/>
   </div>
 }
@@ -177,7 +177,7 @@ export function Timeline({date,daySelected,puzzleMode,from,to,playing,onPlay,onD
     const totals=(values:(number|null)[])=>calendarWeeks.map(week=>summarizeWeek(
       values.slice(dateIndex(week.from,firstDate),dateIndex(week.to,firstDate)+1),false).value)
     return {raw,adjusted,dayScale:calendarActivityScale(raw,adjusted,metric),
-      weekScale:calendarActivityScale(totals(raw),totals(adjusted),metric)}
+      weekScale:calendarActivityScale(totals(raw),totals(adjusted),metric,true)}
   },[series,metric,historicalCalendar,puzzleMode])
   const values=useMemo(()=>{
     if(activity)return harmonized?activity.adjusted:activity.raw
