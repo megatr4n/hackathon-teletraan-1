@@ -523,9 +523,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
   display:flex;
   flex:1 0 auto;
   flex-direction:column;
-  justify-content:space-evenly;
-  gap:8px;
-  padding-block:8px;
+  min-height:0;
+  gap:0;
+  padding-block:0;
 }
 .analytics { grid-row:1 }
 .map-stage { grid-row:1 }
@@ -714,7 +714,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 .mission-workspace .workbench[data-analytics-open=false] { --right-panel:0px }
 .mission-workspace .workbench>.filters,.mission-workspace .workbench>.analytics { grid-row:1 }
 .mission-workspace .workbench>.filters { margin-bottom:var(--calendar-overlay); overflow:visible }
-.workbench>.filters .query-filter-sections>.filter-section { flex:none }
+.workbench>.filters .query-filter-sections>.filter-section {
+  flex:1 0 auto; display:flex; flex-direction:column; justify-content:space-evenly; gap:4px;
+}
+.workbench>.filters .query-filter-sections>.filter-section:last-child { border-bottom:0 }
 .workbench>[hidden] { display:none }
 .mission-workspace .map-stage { grid-area:1 / 2; margin-bottom:var(--calendar-overlay) }
 .panel-toggle.button { position:absolute; top:19px; z-index:4; width:23px; height:58px; padding:0; color:#c1cddd; background:#151e2a; border:1px solid #455267 }
