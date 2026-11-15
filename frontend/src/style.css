@@ -631,7 +631,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 .compact-timeline .timeline-title h2 { font-size:11.5px }
 .compact-timeline .timeline-title div>span { margin-top:3px; font-size:8px }
 .compact-timeline .timeline-controls { position:relative; padding-inline:8px; border-inline:0 }
-.compact-timeline .timeline-controls input { max-width:165px }
+.compact-timeline .timeline-controls input { max-width:330px }
 .daily-calendar { --year:44px; --half:55px; --day-gap:1px }
 .daily-calendar-inner { min-width:max(100%,1120px); width:100% }
 .daily-months { font-size:9px }
@@ -660,13 +660,17 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
   .filters .panel-header { min-height:52px }
 }
 
-.timeline-player { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,315px) minmax(226px,1fr); align-items:center; column-gap:8px; min-width:0 }
+.timeline-player { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,600px) minmax(150px,1fr); align-items:center; column-gap:8px; min-width:0 }
 .timeline-player .timeline-controls { grid-column:2 }
 .timeline-player .timeline-note { grid-column:3; width:min(100%,226px); min-width:0; margin:0 }
+@media(max-width:1400px) {
+  .timeline-player { grid-template-columns:minmax(0,1fr) }
+  .timeline-player .timeline-controls,.timeline-player .timeline-note { grid-column:1 }
+  .timeline-player .timeline-note { width:auto }
+}
 @media(max-width:1050px) {
-  .timeline-player { grid-template-columns:minmax(0,1fr) minmax(0,226px); width:min(100%,549px); justify-self:center }
+  .timeline-player { width:100%; justify-self:center }
   .timeline-player .timeline-controls { grid-column:1; flex-basis:auto }
-  .timeline-player .timeline-note { grid-column:2 }
   .timeline-top.compact-timeline { grid-template-columns:minmax(166px,195px) minmax(0,1fr) auto }
   .compact-timeline .timeline-title { grid-column:1/-1; grid-row:1 }
   .compact-timeline .date-grid { grid-column:1; grid-row:2 }
@@ -678,7 +682,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
   .compact-timeline .date-grid { max-width:210px }
   .compact-timeline .timeline-player { grid-column:1/-1; grid-row:3 }
   .compact-timeline .timeline-view { grid-column:2; grid-row:2 }
-  .timeline-player { grid-template-columns:minmax(0,1fr) min(226px,62%); column-gap:5px }
 }
 @media(max-height:810px), (min-width:561px) and (max-width:1050px) {
   .filters .filter-section { padding-block:8px }
