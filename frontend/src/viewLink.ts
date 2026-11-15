@@ -85,7 +85,8 @@ export function updateViewUrl(settings:Snapshot) {
   if(to!==lastDate)params.set('to',to)
   if(pass!=='all')params.set('pass',pass)
   if(!harmonized)params.set('mode','raw')
-  if(metric!=='frp')params.set('metric',metric)
+  // Existing shared views omit the metric for FRP. The bare URL uses the new default.
+  if(metric!==initialSnapshot.metric||fields.some(field=>params.has(field)))params.set('metric',metric)
   if(calendarView!=='grid')params.set('view',calendarView)
   if(url.href!==window.location.href)window.history.replaceState(window.history.state,'',url)
 }

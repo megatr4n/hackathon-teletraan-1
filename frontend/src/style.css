@@ -63,7 +63,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 .algorithm-switch { margin-left:auto; flex:none }
 .algorithm-switch .segment { padding-inline:10px }
 .algorithm-switch .segment[data-state=on] { background:#182b2a; border-color:#34544b; color:#a3dec1 }
-.algorithm-tag { color:#91c9b2; padding:1px 4px; font-size:9px; border:1px solid #42645b; border-radius:3px }
 .country-search { display:flex; align-items:center; gap:10px; position:relative; max-width:420px; flex:1; min-width:120px; height:34px; padding:0 10px; border-radius:5px; border:1px solid #394655; background:#0e131c; color:#92a2b4 }
 .country-search:focus-within { border-color:#b87556 }
 .country-search input { width:100%; min-width:0; outline:none; color:#eff3f8; font-size:12px }
@@ -157,13 +156,14 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 .kpis strong small { color:#8c9cad; font-size:9px; font-weight:480; letter-spacing:0 }
 .export-buttons { display:grid; gap:6px; margin-top:auto }
 .export-buttons .button { height:33px; font-size:11px; justify-content:flex-start; padding:0 9px; font-weight:650 }
-.button.csv-button { background:#22604f; border-color:#367f68; color:#e8fff4 }
-.button.csv-button:not(:disabled):hover { background:#2e795f; border-color:#62b28e }
+.button.csv-button,.button.pdf-button { background:#22604f; border-color:#367f68; color:#e8fff4 }
+.button.csv-button:not(:disabled):hover,.button.pdf-button:not(:disabled):hover { background:#2e795f; border-color:#62b28e }
+.export-buttons .button.csv-button { background:#29313b; border-color:#495666; color:#e0e6ed }
+.export-buttons .button.csv-button:not(:disabled):hover { background:#384453; border-color:#657689 }
 .button.geojson-button { background:#192331; border-color:#354359; color:#c4cfdd }
 .button-tail { margin-left:auto; opacity:.7 }
 
 .map-stage { isolation:isolate; min-width:0; min-height:100%; position:relative; overflow:hidden; background:#060c18 }
-.map-stage.map-expanded { position:fixed; inset:0; min-height:0; z-index:20 }
 .map-canvas,.map-vignette,.map-fallback { position:absolute; inset:0 }
 .map-canvas { background:transparent }
 .map-stars { position:absolute; inset:0 auto auto 0; z-index:2; width:100%; height:auto; pointer-events:none;
@@ -205,7 +205,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 .map-controls .button[aria-pressed=true] { color:#ffaf83 }
 .map-control-group { display:grid; border:1px solid #455267; border-radius:5px; overflow:hidden }
 .map-control-group .button+.button { border-top:1px solid #354356 }
-.map-controls .compass,.map-controls .expand-control { border:1px solid #455267; border-radius:5px }
+.map-controls .compass { border:1px solid #455267; border-radius:5px }
 .map-controls .compass { width:50px; height:51px }
 .compass-face { display:block; width:31px; height:31px; position:relative; border:1px solid #68788c; border-radius:50%; background:linear-gradient(90deg,transparent 48%,#5a6b7d 50%,transparent 53%),linear-gradient(0deg,transparent 48%,#5a6b7d 50%,transparent 53%) }
 .compass-face b { font:8px var(--mono); position:absolute; top:-9px; left:50%; transform:translateX(-50%); color:#e2e6ed; background:#151e2a; padding:0 1px }
@@ -220,13 +220,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 .map-focus-label i { width:5px; height:5px; border-radius:50%; background:#fa8d5e }
 .draw-overlay { position:absolute; inset:0; z-index:2; touch-action:none; cursor:crosshair }
 .circle-radius line,.circle-radius circle { stroke:#65d7f3; stroke-width:1.5; fill:#132b38 }
-.map-filter-dock { --map-filter-width:min(280px,calc(100vw - 88px)); position:absolute; top:19px; left:0; z-index:5; display:flex; align-items:flex-start; transform:translateX(calc(-1 * var(--map-filter-width))); transition:transform .2s ease-out }
-.map-filter-dock[data-open=true] { transform:translateX(0) }
-.map-filter-dock .map-filter-panel { width:var(--map-filter-width); max-height:calc(100dvh - 38px); overflow:auto; border:1px solid #394759; border-left:0; border-radius:0 0 5px 0 }
-.map-filter-dock[data-open=true] .map-filter-panel { box-shadow:0 12px 35px #0007 }
-.map-filter-panel>.panel-header,.map-filter-panel>.filter-section { flex-shrink:0 }
-.map-filter-toggle.button { width:34px; height:36px; flex:none; border:1px solid #455267; border-radius:0 5px 5px 0; background:#151e2a }
-.map-filter-dock[data-open=true] .map-filter-toggle { color:#ffad83 }
 .map-dates { border-bottom:0; border-top:1px solid #303949 }
 .draw-hint { position:absolute; z-index:4; top:60px; left:50%; transform:translateX(-50%); display:flex; align-items:center; gap:6px; color:#aeeaf6; padding:7px 9px; background:#132b38; border:1px solid #458596; border-radius:5px; white-space:nowrap; font-size:11px; pointer-events:none }
 
@@ -335,7 +328,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
   .command-divider { display:none }
   .mode-switch .segment,.algorithm-switch .segment { padding:4px 5px; min-height:25px; font-size:9px; gap:4px }
   .mode-switch svg,.algorithm-switch svg { width:12px }
-  .algorithm-tag { font-size:7px }
   .scenario-list,.country-search { order:3; flex:1 0 100%; max-width:100% }
   .workbench { display:flex; flex-direction:column }
   .map-stage { order:-1; min-height:455px }
@@ -380,7 +372,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 .analytics { grid-column:3; grid-row:1/3; overflow:hidden; display:grid; grid-template-rows:auto auto minmax(0,1fr) auto; gap:8px }
 .command-bar { grid-column:2; grid-row:1; padding:6px 10px; min-height:0; gap:8px; z-index:6; min-width:0 }
 .map-stage { grid-column:2; grid-row:2; min-height:0 }
-.workbench>.map-stage.map-expanded { z-index:20 }
 .command-bar .country-search { flex:0 1 315px; min-width:105px }
 .command-tools { display:flex; gap:5px; align-items:center; justify-content:flex-start; min-width:0; flex:none }
 .tool-button { height:31px; padding:0 7px; font-size:10px; flex:none }
@@ -415,7 +406,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 .kpis .wide-kpi>span { white-space:normal }
 .map-controls { width:36px; gap:5px }
 .map-controls .button { min-height:34px; width:34px }
-.map-controls .compass,.map-controls .expand-control { width:36px; height:36px }
+.map-controls .compass { width:36px; height:36px }
 .compass-face { width:23px; height:23px }
 .compass-face i,.compass-face em { border-left-width:3px; border-right-width:3px }
 .compass-face i { border-bottom-width:8px; top:2px }
@@ -557,7 +548,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 .compact-timeline .date-field b { font-size:9px }
 .compact-timeline .timeline-controls { justify-content:flex-start }
 .compact-timeline .timeline-controls input { max-width:none }
-.compact-timeline .timeline-note { font-size:7.8px; line-height:1.35; opacity:.60; text-wrap:balance }
+.compact-timeline .timeline-note { font-size:7.8px; line-height:1.35; text-wrap:balance }
+.compact-timeline .timeline-note>p { opacity:.60 }
 .daily-calendar { overflow:auto; max-height:144px; scrollbar-width:thin; scrollbar-color:#46586c #141b26; padding:0 13px 6px; --day:6px; --day-gap:1px; --year:36px; --half:44px }
 .daily-calendar-inner { width:max-content; min-width:100% }
 .daily-months,.daily-year { display:grid; grid-template-columns:var(--year) var(--half) minmax(0,1fr); column-gap:5px }
@@ -640,7 +632,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 .compact-timeline .timeline-title h2 { font-size:11.5px }
 .compact-timeline .timeline-title div>span { margin-top:3px; font-size:8px }
 .compact-timeline .timeline-controls { position:relative; padding-inline:8px; border-inline:0 }
-.compact-timeline .timeline-controls input { max-width:165px }
+.compact-timeline .timeline-controls input { max-width:330px }
 .daily-calendar { --year:44px; --half:55px; --day-gap:1px }
 .daily-calendar-inner { min-width:max(100%,1120px); width:100% }
 .daily-months { font-size:9px }
@@ -669,13 +661,17 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
   .filters .panel-header { min-height:52px }
 }
 
-.timeline-player { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,315px) minmax(226px,1fr); align-items:center; column-gap:8px; min-width:0 }
+.timeline-player { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,600px) minmax(150px,1fr); align-items:center; column-gap:8px; min-width:0 }
 .timeline-player .timeline-controls { grid-column:2 }
 .timeline-player .timeline-note { grid-column:3; width:min(100%,226px); min-width:0; margin:0 }
+@media(max-width:1400px) {
+  .timeline-player { grid-template-columns:minmax(0,1fr) }
+  .timeline-player .timeline-controls,.timeline-player .timeline-note { grid-column:1 }
+  .timeline-player .timeline-note { width:auto }
+}
 @media(max-width:1050px) {
-  .timeline-player { grid-template-columns:minmax(0,1fr) minmax(0,226px); width:min(100%,549px); justify-self:center }
+  .timeline-player { width:100%; justify-self:center }
   .timeline-player .timeline-controls { grid-column:1; flex-basis:auto }
-  .timeline-player .timeline-note { grid-column:2 }
   .timeline-top.compact-timeline { grid-template-columns:minmax(166px,195px) minmax(0,1fr) auto }
   .compact-timeline .timeline-title { grid-column:1/-1; grid-row:1 }
   .compact-timeline .date-grid { grid-column:1; grid-row:2 }
@@ -687,7 +683,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
   .compact-timeline .date-grid { max-width:210px }
   .compact-timeline .timeline-player { grid-column:1/-1; grid-row:3 }
   .compact-timeline .timeline-view { grid-column:2; grid-row:2 }
-  .timeline-player { grid-template-columns:minmax(0,1fr) min(226px,62%); column-gap:5px }
 }
 @media(max-height:810px), (min-width:561px) and (max-width:1050px) {
   .filters .filter-section { padding-block:8px }
@@ -738,6 +733,68 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
   .puzzle-dropdown { position:fixed; top:56px; left:8px; width:min(345px,calc(100vw - 16px)) }
   .puzzle-actions .button,.puzzle-archive select,.puzzle-region-link.button { min-height:44px }
 }
+
+.mission-workspace {
+  --calendar-overlap:0px;
+  --calendar-resting-height:144px;
+  --calendar-overlay:max(0px,var(--calendar-overlap));
+  --workbench-height:max(490px,calc(100dvh - 259px));
+  position:relative;
+}
+.mission-workspace .workbench {
+  height:calc(var(--workbench-height) - min(0px,var(--calendar-overlap)));
+  --left-panel:clamp(223px,18.9vw,295px);
+  --right-panel:clamp(274px,22.4vw,345px);
+  grid-template-columns:var(--left-panel) minmax(0,1fr) var(--right-panel);
+  grid-template-rows:minmax(0,1fr);
+  position:relative;
+}
+.mission-workspace .workbench[data-filters-open=false] { --left-panel:0px }
+.mission-workspace .workbench[data-analytics-open=false] { --right-panel:0px }
+.mission-workspace .workbench>.filters,.mission-workspace .workbench>.analytics { grid-row:1 }
+.mission-workspace .workbench>.filters { margin-bottom:var(--calendar-overlay); overflow:visible }
+.workbench>.filters .query-filter-sections>.filter-section { flex:none }
+.workbench>[hidden] { display:none }
+.mission-workspace .map-stage { grid-area:1 / 2; margin-bottom:var(--calendar-overlay) }
+.panel-toggle.button { position:absolute; top:19px; z-index:4; width:23px; height:58px; padding:0; color:#c1cddd; background:#151e2a; border:1px solid #455267 }
+.panel-toggle[aria-expanded=true] { color:#ffad83 }
+.panel-toggle-left.button { left:var(--left-panel); border-radius:0 5px 5px 0 }
+.panel-toggle-right.button { right:var(--right-panel); border-radius:5px 0 0 5px }
+.mission-workspace .timeline { position:relative; z-index:5; margin-top:calc(-1 * var(--calendar-overlay)) }
+.mission-workspace .daily-calendar { height:calc(var(--calendar-resting-height) + var(--calendar-overlap)); max-height:none }
+.mission-workspace .timeline-top { position:relative }
+.calendar-drag-handle { position:absolute; z-index:1; inset:0 0 auto; height:7px }
+.calendar-drag-handle,.mission-workspace .timeline-title { cursor:ns-resize; touch-action:none; user-select:none }
+.calendar-drag-handle:focus-visible { outline:1px solid #ffad83; outline-offset:-1px }
+@media(max-width:900px) {
+  .mission-workspace { --workbench-height:485px }
+  .mission-workspace .workbench { min-height:0; grid-template-columns:0 minmax(0,1fr) 0 }
+  .mission-workspace .workbench>.filters,.mission-workspace .workbench>.analytics { position:absolute; z-index:3; top:0; bottom:0; grid-area:auto; width:min(320px,calc(100% - 68px)) }
+  .mission-workspace .workbench>.filters { left:0; bottom:var(--calendar-overlay); margin-bottom:0 }
+  .mission-workspace .workbench>.analytics { right:0; grid-template-rows:auto auto minmax(0,1fr) auto }
+  .mission-workspace .panel-toggle[aria-expanded=true].panel-toggle-left { left:min(320px,calc(100% - 68px)) }
+  .mission-workspace .panel-toggle[aria-expanded=true].panel-toggle-right { right:min(320px,calc(100% - 68px)) }
+  .mission-workspace .panel-toggle-left { left:0 }
+  .mission-workspace .panel-toggle-right { right:0 }
+  .mission-workspace .workbench[data-analytics-open=true] .map-controls { right:calc(min(320px, 100% - 68px) + 14px) }
+}
+@media(max-width:560px) {
+  .mission-workspace { --workbench-height:420px }
+}
+
+.button.info-tip { flex:none; width:20px; height:20px; min-height:0; padding:0; border:0; background:transparent; color:#aabaca }
+.button.info-tip:is(:hover,:focus-visible) { color:#ffad83; background:#293341 }
+.legend-title .info-tip { pointer-events:auto }
+.help-tooltip { position:fixed; z-index:100; width:min(240px,calc(100vw - 16px)); padding:8px 10px; pointer-events:none;
+  border:1px solid #455267; border-radius:5px; background:#151e2a; color:#e5eaf0; box-shadow:0 5px 16px #0008;
+  font:12px/1.4 "Inter Variable",Inter,sans-serif; text-transform:none; letter-spacing:normal }
+
+.calendar-scale { display:flex; flex-wrap:wrap; align-items:center; gap:2px 5px; margin-bottom:3px; color:#bac7d4; font:9px var(--mono) }
+.calendar-scale-key,.calendar-scale-ramp { display:inline-flex; align-items:center; gap:2px }
+.calendar-scale i { width:8px; height:8px; border-radius:1px; display:block }
+.calendar-scale .info-tip { width:15px; height:15px }
+.calendar-scale .info-tip svg { width:11px; height:11px }
+
 .seasonal-hotspots-body { display:grid; gap:8px; padding:9px }
 .seasonal-source,.seasonal-note { margin:0; color:#a9b6c6; font-size:11px; line-height:1.4 }
 .seasonal-months { display:grid; gap:5px; margin:0; padding:0; list-style:none }

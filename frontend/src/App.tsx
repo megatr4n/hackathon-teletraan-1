@@ -1,7 +1,7 @@
+import { startTransition, useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react'
 import { rankQuietMonths } from './seasonalHotspots'
-import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
-import { Activity, ArrowDown, ArrowDownToLine, ArrowUpRight, Bookmark, BookmarkPlus, Camera as CameraIcon, Circle, Clock3, CodeXml, Crosshair, Database, FileText, Focus as FocusIcon, Grid2X2, Layers3, Lasso, Leaf, MapPin, Puzzle as PuzzleIcon, Ruler, Search, SlidersHorizontal, Satellite, TriangleAlert, X, Zap } from 'lucide-react'
+import { Activity, ArrowDown, ArrowDownToLine, ArrowUpRight, Bookmark, BookmarkPlus, Camera as CameraIcon, Circle, ChevronLeft, ChevronRight, Clock3, CodeXml, Crosshair, Database, FileText, Focus as FocusIcon, Grid2X2, Layers3, Lasso, Leaf, MapPin, Puzzle as PuzzleIcon, Ruler, Search, SlidersHorizontal, Satellite, TriangleAlert, X, Zap } from 'lucide-react'
 import { areaPolygon, cellPolygon, clampDate, DAY, doy, firstDate, iso, maxCircleRadius, number, prettyDate, territories, type Aoi, type Cell, type Coord } from './data'
 import { calibration, calibrationAccuracy } from './calibration'
 import { cellObservations, dailyEstimates, dailyStats, dateIndex, periodStats, viirsStart } from './estimates'
@@ -9,8 +9,8 @@ import { archiveDates, observations } from './observations'
 import { countryOptions, emptyRegions, focusForRegion, geography, type AreaMode, type Region, type RegionCollection, type RegionFeature } from './geography'
 import { MapStage, type Tool } from './MapStage'
 import { initialSnapshot, readPins, writePins, type Camera, type Pin, type Snapshot } from './pins'
-import { DateRangeFields, Timeline } from './Timeline'
-import { Button, Segmented } from './ui'
+import { Timeline } from './Timeline'
+import { Button, InfoTip, Segmented, frpHelp, hotspotHelp, zScoreHelp } from './ui'
 import { PuzzleDropdown } from './PuzzlePanels'
 import { puzzleFocus, type Puzzle } from './dailyPuzzle'
 import { useDailyPuzzle } from './useDailyPuzzle'
@@ -18,7 +18,7 @@ import type { HistoricalReport } from './statisticalReport'
 import { historicalApi, historicalFetch, gridParams, historicalCells, historicalRequest, useHistorical, actualDay, historicalCalendarValue, scoreDetails, actualPeriod, snppArchiveStart } from './historical'
 import { snapshotFromUrl, updateViewUrl } from './viewLink'
 
-import { cinematicTrack, tourRegions, type CameraCommand } from './cameraTour'
+import { cinematicTrack, tourRegions, type CameraCommand, type CameraDestination } from './cameraTour'
 function UtcClock() {
   const [time,setTime]=useState(()=>new Date().toISOString().slice(11,19))
   useEffect(()=>{
@@ -28,6 +28,7 @@ function UtcClock() {
   return <span className="mission-clock mono" aria-label="UTC clock"><Clock3 size={13}/>{time} <b>UTC</b></span>
 }
 
+const narrowWorkbench='(max-width: 900px)'
 const normalize=(value:string)=>value.normalize('NFD').replace(/\p{Diacritic}/gu,'').toLowerCase()
 const countryAliases = new Map(territories.map(country=>[country.iso3,normalize(country.name_uk)]))
 
@@ -101,6 +102,14 @@ export function App() {
   const {focus,region,date,from,to,pass,harmonized,areaMode,aoi,radius,query,options,metric,calendarView}=settings
   const camera=useRef(settings.camera)
   const [command,setCommand]=useState<CameraCommand|null>(()=>settings===initialSnapshot?null:{camera:settings.camera,duration:0})
+  const [filtersOpen,setFiltersOpen]=useState(()=>!window.matchMedia(narrowWorkbench).matches)
+  const [analyticsOpen,setAnalyticsOpen]=useState(()=>!window.matchMedia(narrowWorkbench).matches)
+  useEffect(()=>{
+    const layout=window.matchMedia(narrowWorkbench)
+    const closePanels=()=>{if(layout.matches){setFiltersOpen(false);setAnalyticsOpen(false)}}
+    layout.addEventListener('change',closePanels)
+    return ()=>layout.removeEventListener('change',closePanels)
+  },[])
   const [tool,setTool]=useState<Tool>(null)
   const [circlePreviewRadius,setCirclePreviewRadius]=useState<number|null>(null)
   const [dialog,setDialog]=useState(false)
@@ -184,7 +193,11 @@ export function App() {
   const historical=historicalApi!==undefined&&!game.open
   const viirs=date>=(historical?snppArchiveStart:viirsStart)
   const actual=useHistorical(historical,historicalRequest(settings),date)
-  const cells=useMemo(()=>historical?historicalCells(actual.rows??[],harmonized):demoCells,[historical,actual.rows,harmonized,demoCells])
+  const cells=useMemo(()=>{
+    if(historical)return historicalCells(actual.rows??[],date,harmonized)
+    if(!viirs)return demoCells
+    return demoCells.map(cell=>({...cell,raw:cellObservations(cell,pass).viirsFrp}))
+  },[historical,actual.rows,date,harmonized,viirs,demoCells,pass])
   const mappedDetections = useMemo(() => historical && actual.rows
     ? cells.reduce((total, cell) => total + cell.weight, 0)
     : null, [historical, actual.rows, cells])
@@ -236,19 +249,24 @@ export function App() {
       }
     }))
   }, [historical, actual.days, series])
+  const calendarDayWhileLoading=actual.days?undefined:actual.day
   const historicalCalendar=useMemo(()=>{
     if(!historical)return undefined
-    const byDate=new Map(observedDays.map(day=>[day.date,day.values]))
-    const scores=metric==='z'?new Map(actual.days?.map(day=>[day.date,day])):undefined
-    if(actual.day&&!byDate.has(actual.day.date))byDate.set(actual.day.date,actualDay(actual.day,pass))
-    return archiveDates.map(day=>{
-      if(metric==='z'){
-        const row=scores?.get(day)
+    if(metric==='z'){
+      const scores=new Map(actual.days?.map(day=>[day.date,day]))
+      const days=archiveDates.map(day=>{
+        const row=scores.get(day)
         return {value:row?.z_score??null,source:'MODIS',details:scoreDetails(row)}
-      }
-      return historicalCalendarValue(day,byDate.get(day),metric,harmonized)
-    })
-  },[actual.day,actual.days,observedDays,historical,harmonized,metric,pass])
+      })
+      return {raw:days,harmonized:days}
+    }
+    const byDate=new Map(observedDays.map(day=>[day.date,day.values]))
+    if(calendarDayWhileLoading)byDate.set(calendarDayWhileLoading.date,actualDay(calendarDayWhileLoading,pass))
+    return {
+      raw:archiveDates.map(day=>historicalCalendarValue(day,byDate.get(day),metric,false)),
+      harmonized:archiveDates.map(day=>historicalCalendarValue(day,byDate.get(day),metric,true)),
+    }
+  },[calendarDayWhileLoading,actual.days,observedDays,historical,metric,pass])
 
 
   useEffect(()=>{
@@ -263,13 +281,23 @@ export function App() {
     return ()=>clearTimeout(timer)
   },[message])
 
-  function chooseRegion(next:Region,point?:Coord) {
+  function navigateTo(target:CameraDestination,apply:()=>void,globe:boolean,duration:number) {
+    if(globe&&!window.matchMedia('(prefers-reduced-motion: reduce)').matches){
+      setCommand({globe:target,startedAt:performance.now()})
+      startTransition(apply)
+    }else{
+      apply()
+      setCommand({camera:target,duration:globe?0:duration})
+    }
+  }
+
+  function chooseRegion(next:Region,point?:Coord,globe=false) {
     stopTour(false)
     const nextFocus=focusForRegion(next,date,point)
     const nextMode=next.kind==='eco'?'ecoregions':'countries'
-    setSettings(current=>({...current,focus:nextFocus,region:next,areaMode:nextMode,aoi:null,query:next.name}))
     setTool(null);setOrbiting(false);setPlaying(false)
-    setCommand({camera:{lon:nextFocus.center[0],lat:nextFocus.center[1],zoom:nextFocus.zoom},duration:880})
+    const target={lon:nextFocus.center[0],lat:nextFocus.center[1],zoom:nextFocus.zoom}
+    navigateTo(target,()=>setSettings(current=>({...current,focus:nextFocus,region:next,areaMode:nextMode,aoi:null,query:next.name})),globe,880)
   }
   function goToPuzzleRegion(puzzle:Puzzle) {
     const next=puzzleFocus(puzzle)
@@ -375,8 +403,8 @@ export function App() {
     setHasSelectedDay(true)
     const snapshot=pin.snapshot
     const restoredFocus=snapshot.region?.kind==='country'?{...snapshot.focus,area:'Country or territory'}:snapshot.focus
-    setSettings({...snapshot,focus:restoredFocus});setTool(null);setMeasuring(false);setOrbiting(false);setPlaying(false);setPinMenu(false)
-    setCommand({camera:pin.snapshot.camera,duration:850})
+    setTool(null);setMeasuring(false);setOrbiting(false);setPlaying(false);setPinMenu(false)
+    navigateTo(snapshot.camera,()=>setSettings({...snapshot,focus:restoredFocus}),true,0)
     setMessage('Opened '+pin.name)
   }
   async function exportReport() {
@@ -424,7 +452,7 @@ export function App() {
     if(!cells.length)return
     const values=(cell:Cell)=>{
       const sensors=cellObservations(cell,pass)
-      return {date,selected_frp_mw:harmonized?sensors.correctedFrp:cell.raw,harmonized_modis_frp_mw:sensors.correctedFrp,raw_modis_hotspots:sensors.rawCount,harmonized_modis_hotspots:sensors.correctedCount,
+      return {date,selected_frp_mw:viirs?sensors.viirsFrp:harmonized?sensors.correctedFrp:cell.raw,harmonized_modis_frp_mw:sensors.correctedFrp,raw_modis_hotspots:sensors.rawCount,harmonized_modis_hotspots:sensors.correctedCount,
         viirs_frp_mw:viirs?sensors.viirsFrp:null,viirs_hotspots:viirs?sensors.viirsCount:null,mode:harmonized?'harmonized':'raw',source:'demo'}
     }
     if(format==='csv'){
@@ -448,10 +476,10 @@ export function App() {
       <div className="panel-header"><span className="section-icon"><SlidersHorizontal size={16}/></span><h2>Query filters</h2></div>
       <div className="query-filter-sections">
         <section className="filter-section">
-          <h3><FocusIcon size={14}/>Area of interest</h3>
+          <h3><FocusIcon size={14}/>Area of interest <InfoTip label="Area of interest" help="Choose the country, administrative region, ecoregion, or custom area used to filter observations."/></h3>
           <Segmented label="Area of interest" value={areaMode} onChange={changeAreaMode} className="area-mode"
             items={[{value:'countries',label:'Countries'},{value:'ecoregions',label:'Eco-regions'},{value:'custom',label:'Custom Area'}]}/>
-          <RegionSearch key={areaMode} query={query} mode={areaMode} options={displayOptions} onQuery={value=>setSettings(current=>({...current,query:value}))} onChoose={chooseRegion}/>
+          <RegionSearch key={areaMode} query={query} mode={areaMode} options={displayOptions} onQuery={value=>setSettings(current=>({...current,query:value}))} onChoose={next=>chooseRegion(next,undefined,true)}/>
           {areaMode!=='custom'?<>
             <div className="focus-card"><MapPin size={17}/><div><strong>{focus.name}</strong><span>{focus.area}</span></div><Crosshair size={14} className="focus-cross"/></div>
             {areaMode==='countries'&&region?.country&&admins.features.length>0&&<label className="admin-field">
@@ -460,8 +488,8 @@ export function App() {
                   const id=event.target.value
                   const match=id?admins.features.find(feature=>feature.properties.id===id):undefined
                   const country=countryList.find(entry=>entry.kind==='country'&&entry.id===region.country)
-                  if(match)chooseRegion(match.properties)
-                  else if(!id&&country)chooseRegion(country)
+                  if(match)chooseRegion(match.properties,undefined,true)
+                  else if(!id&&country)chooseRegion(country,undefined,true)
                 }}>
                 <option value="">Whole country</option>
                 {[...admins.features].sort((a,b)=>a.properties.name.localeCompare(b.properties.name)).map(feature=><option key={feature.properties.id} value={feature.properties.id}>{feature.properties.name}</option>)}
@@ -479,6 +507,7 @@ export function App() {
           </div>}
         </section>
         <section className="filter-section orbital-filters">
+          <h3>Orbital pass <InfoTip label="Orbital pass" help="Filter detections by whether the satellite observed the area during a daytime or nighttime pass."/></h3>
           <Segmented label="Orbital pass" value={pass} onChange={value=>setSettings(current=>({...current,pass:value}))}
             items={[{value:'all',label:'All Passes'},{value:'day',label:'Day'},{value:'night',label:'Night'}]}/>
           <div className="pass-coefficients mono">
@@ -488,7 +517,11 @@ export function App() {
           </div>
         </section>
         <section className="filter-section calibration-controls">
-          <h3><Layers3 size={14}/>Intercalibration</h3>
+          <h3><Layers3 size={14}/>Intercalibration
+            <InfoTip label="Intercalibration" help={historical
+              ? 'Before 20 January 2012, Raw Satellite shows original MODIS values and Harmonized adjusts them to the VIIRS scale. From that date, the map prefers VIIRS FRP per cell and the calendar prefers VIIRS per daily metric. Each uses adjusted MODIS when the corresponding VIIRS value is unavailable.'
+              : 'In the demo, Raw and Harmonized show different MODIS values before 2012. From 2012 both show the simulated VIIRS values on the map and calendar.'}/>
+          </h3>
           <Segmented label="Intercalibration mode" value={harmonized?'harmonized':'raw'} onChange={value=>setSettings(current=>({...current,harmonized:value==='harmonized'}))}
             items={[{value:'raw',label:<><Database size={13}/> Raw Satellite</>},{value:'harmonized',label:'Harmonized'}]}/>
         </section>
@@ -503,18 +536,18 @@ export function App() {
         <div className="brand-copy"><h1>TELETRAAN-1</h1><div className="mono">WILDFIRE MISSION CONTROL</div></div>
       </div>
         <div className="header-tools">
-          <Button className="tool-button orbit-trigger" title="3D Orbit Tour / Fly-Around" aria-label="3D Orbit Tour / Fly-Around" aria-pressed={orbiting} onClick={orbit}><CameraIcon size={15}/><span>{orbiting?"Tour "+tourStop+"/"+tour.current?.stops.length:"3D Orbit Tour"}</span></Button>
+          <Button className="tool-button orbit-trigger" helpDelay={500} help="Start or stop a camera tour of the showcase regions." aria-label="3D Orbit Tour / Fly-Around" aria-pressed={orbiting} onClick={orbit}><CameraIcon size={15}/><span>{orbiting?"Tour "+tourStop+"/"+tour.current?.stops.length:"3D Orbit Tour"}</span></Button>
           <PuzzleDropdown game={game} onRegion={goToPuzzleRegion} trigger={id=><Button className="tool-button puzzle-trigger" aria-label="Daily Puzzle"
             aria-expanded={game.open} aria-controls={game.open?id:undefined} data-solved={game.solved}
-            title="Daily Puzzle" onClick={game.toggle}><PuzzleIcon size={15}/><span>Daily Puzzle</span></Button>}/>
-          <Button className="tool-button ecosystem-button" title="Peatlands & Protected Areas Overlay" aria-label="Peatlands & Protected Areas Overlay" aria-pressed={options.ecosystems}
+            helpDelay={500} help="Open the daily challenge and find the fire activity that matches its clues." onClick={game.toggle}><PuzzleIcon size={15}/><span>Daily Puzzle</span></Button>}/>
+          <Button className="tool-button ecosystem-button" helpDelay={500} help="Show or hide peatlands, protected areas, and the Chornobyl Exclusion Zone on the map." aria-label="Peatlands & Protected Areas Overlay" aria-pressed={options.ecosystems}
             onClick={()=>setSettings(current=>({...current,options:{...current.options,ecosystems:!current.options.ecosystems}}))}><Leaf size={15}/><span>Peatlands &amp; Protected Areas</span></Button>
-          <Button className="tool-button" title="Ruler" aria-label="Ruler" aria-pressed={measuring} onClick={()=>{setTool(null);setMeasuring(value=>!value)}}><Ruler size={15}/><span>Ruler</span></Button>
+          <Button className="tool-button" helpDelay={500} help="Activate the ruler, then drag between two points on the map to measure the distance." aria-label="Ruler" aria-pressed={measuring} onClick={()=>{setTool(null);setMeasuring(value=>!value)}}><Ruler size={15}/><span>Ruler</span></Button>
           </div>
         <div className="header-pins">
-          <Button className="tool-button" title="Save pin" aria-label="Save pin" onClick={()=>{setPinMenu(false);setPinName('');setPinDialog(true)}}><BookmarkPlus size={15}/></Button>
+          <Button className="tool-button" helpDelay={500} help="Save the current map view, date range, and filters as a pin." aria-label="Save pin" onClick={()=>{setPinMenu(false);setPinName('');setPinDialog(true)}}><BookmarkPlus size={15}/></Button>
           <div className="pin-dock" ref={pinDock}>
-            <Button className="tool-button" title="Open saved pins" aria-label="Open saved pins" aria-expanded={pinMenu} onClick={()=>setPinMenu(value=>!value)}><Bookmark size={15}/><span>Pins</span></Button>
+            <Button className="tool-button" helpDelay={500} help="Open your saved views and the built-in scenarios." aria-label="Open saved pins" aria-expanded={pinMenu} onClick={()=>setPinMenu(value=>!value)}><Bookmark size={15}/><span>Pins</span></Button>
             {pinMenu&&<div className="pin-list" aria-label="Saved pins">
               {pins.length?pins.map(pin=><div className="pin-row" key={pin.id}>
                 <button type="button" onClick={()=>restorePin(pin)}>{pin.name}</button>
@@ -527,18 +560,30 @@ export function App() {
         </div>
     </header>
 
-    <div className="workbench">
-      <aside className="filters">{queryFilters()}</aside>
+    <div className="mission-workspace">
+    <div className="workbench" data-filters-open={filtersOpen} data-analytics-open={analyticsOpen}>
+      <aside className="filters" id="query-filters" aria-label="Query filters" hidden={!filtersOpen}>{queryFilters()}</aside>
+      <Button className="panel-toggle panel-toggle-left" aria-expanded={filtersOpen} aria-controls="query-filters"
+        aria-label={filtersOpen?'Hide query filters':'Show query filters'} onClick={()=>{
+          if(!filtersOpen&&window.matchMedia(narrowWorkbench).matches)setAnalyticsOpen(false)
+          setFiltersOpen(!filtersOpen)
+        }}>
+        {filtersOpen?<ChevronLeft size={18}/>:<ChevronRight size={18}/>}
+      </Button>
 
-      <MapStage focus={focus} date={date} cells={cells} historical={historical} harmonized={!historical&&harmonized} aoi={aoi} tool={tool} onArea={updateArea} onCirclePreviewRadius={setCirclePreviewRadius}
-        expandedFilters={<>{queryFilters()}<section className="filter-section map-dates">
-          <DateRangeFields from={from} to={to} onRange={range}/>
-        </section></>}
+      <MapStage focus={focus} date={date} cells={cells} historical={historical} harmonized={!historical&&!viirs&&harmonized} aoi={aoi} tool={tool} onArea={updateArea} onCirclePreviewRadius={setCirclePreviewRadius}
         command={command} onCamera={value=>{camera.current=value}} options={options} onOptions={next=>setSettings(current=>({...current,options:next}))}
         countries={countries} admins={admins} ecoregions={ecoregions} areaMode={areaMode} selected={selected} onRegion={selectMapRegion}
         measuring={measuring} orbiting={orbiting} onTourEnd={()=>showTourStop(tourStop)}/>
 
-      <aside className="analytics">
+      <Button className="panel-toggle panel-toggle-right" aria-expanded={analyticsOpen} aria-controls="analytics-panel"
+        aria-label={analyticsOpen?'Hide analytics':'Show analytics'} onClick={()=>{
+          if(!analyticsOpen&&window.matchMedia(narrowWorkbench).matches)setFiltersOpen(false)
+          setAnalyticsOpen(!analyticsOpen)
+        }}>
+        {analyticsOpen?<ChevronRight size={18}/>:<ChevronLeft size={18}/>}
+      </Button>
+      <aside className="analytics" id="analytics-panel" aria-label="Analytics and export" hidden={!analyticsOpen}>
         <div className="panel-header"><span className="section-icon"><Activity size={16}/></span><h2>Analytics &amp; export</h2></div>
         <div className="accuracy-wrap"><span className="accuracy mono" title="Validation metrics for the calibration benchmark"><Activity size={13}/> WAPE {calibrationAccuracy.holdout_daytime_wape_2025} <i/> BIAS {calibrationAccuracy.west_us_bias}</span></div>
         <div className="analytics-scroll">
@@ -575,7 +620,7 @@ export function App() {
           </p>}
           {historical&&actual.complete===false&&<p className="sensor-note">Map display limit reached. CSV and GeoJSON include the full available selection.</p>}
           <section className="analysis-card calibration">
-            <h4><Layers3 size={14}/> Scientific intercalibration</h4>
+            <h4><Layers3 size={14}/> Scientific intercalibration <InfoTip label="Hotspots" help={hotspotHelp}/><InfoTip label="FRP" help={frpHelp}/></h4>
             <div className="sensor-group">Selected day · {date}</div>
             <SensorRow label="Raw MODIS hotspots" value={display(daily.rawCount)} active={!harmonized}/>
             <SensorRow label="Harmonized MODIS hotspots" value={display(daily.correctedCount)} active={harmonized}/>
@@ -607,7 +652,7 @@ export function App() {
               unit={historical?(observedPeriod.peak?display(observedPeriod.peak.values.corrected)+' MW':undefined):period.peak?fmt(period.peak)+' MW':undefined}/>
           </section>
           <section className="analysis-card historical">
-            <h4><Clock3 size={14}/> Historical context</h4>
+            <h4><Clock3 size={14}/> Historical context <InfoTip label="Z-score" help={zScoreHelp}/></h4>
             {historical?<>
               <div className="historical-row"><span><strong className="mono">{display(context?.delta,signed)}</strong> vs historical median</span><small className="mono">{display(context?.median)} MW BASELINE</small></div>
               <div className="historical-row"><span><strong className="mono">{display(context?.rank,value=>'#'+fmt(value))}</strong> FRP rank <small className="inline-meta">/ observed days</small></span><small className="mono">{context?context.percentile.toFixed(1)+'TH PERCENTILE':'—'}</small></div>
@@ -623,8 +668,8 @@ export function App() {
               <span>Mapped satellite detections</span>
               <strong className="mono">{display(mappedDetections)}{actual.complete === false ? ' (partial)' : ''}</strong>
             </section>}
-            <section><span><Grid2X2 size={13}/> Active fire cells</span><strong className="mono">{historical&&!actual.rows?'—':units(cells.length,'cells')}</strong></section>
-            <section title={historical?'Requires time integration of FRP':undefined}><span><Zap size={13}/> Radiative energy</span><strong className="mono">{historical?'—':units(estimates.fre,'TJ')}</strong></section>
+            <section><span><Grid2X2 size={13}/> Active fire cells <InfoTip label="Active fire cells" help="Number of map grid cells containing fire detections for the selected day and filters."/></span><strong className="mono">{historical&&!actual.rows?'—':units(cells.length,'cells')}</strong></section>
+            <section title={historical?'Requires time integration of FRP':undefined}><span><Zap size={13}/> Radiative energy <InfoTip label="Radiative energy" help="Fire radiative energy is the total energy radiated over time. It is estimated by integrating FRP."/></span><strong className="mono">{historical?'—':units(estimates.fre,'TJ')}</strong></section>
             <section className="wide-kpi" title={historical?'Requires a validated area estimate':'FRP ÷ [0.95 × σ × (800⁴ − 300⁴)], expressed in km²'}><span><FocusIcon size={13}/> Estimated fire area</span><strong className="mono">{historical?'—':units(estimates.area,'km²')}</strong></section>
             <section className="wide-kpi" title={historical?'Requires time integration and an emissions model':'FRE × 0.368 kg dry matter/MJ × 1.626 kg CO₂/kg dry matter'}><span><Leaf size={13}/> Estimated CO₂ emissions</span><strong className="mono">{historical?'—':units(estimates.co2,'t')}</strong></section>
           </div>
@@ -632,14 +677,15 @@ export function App() {
         <div className="export-buttons">
           <Button className="csv-button" disabled={historical?!actual.selection:!cells.length} onClick={()=>exportData('csv')}><ArrowDownToLine size={15}/> Download Filtered CSV<ArrowUpRight size={13} className="button-tail"/></Button>
           <Button className="geojson-button" disabled={historical?!actual.selection:!cells.length} onClick={()=>exportData('geojson')}><CodeXml size={15}/> Export GeoJSON for QGIS<ArrowUpRight size={13} className="button-tail"/></Button>
-          <Button className="geojson-button" disabled={exportingReport||(historical&&!actual.selection)} onClick={exportReport}><FileText size={15}/> {exportingReport?'Preparing PDF…':'Export Statistical Report (PDF)'}<ArrowUpRight size={13} className="button-tail"/></Button>
+          <Button className="pdf-button" disabled={exportingReport||(historical&&!actual.selection)} onClick={exportReport}><FileText size={15}/> {exportingReport?'Preparing PDF…':'Export Statistical Report (PDF)'}<ArrowUpRight size={13} className="button-tail"/></Button>
         </div>
       </aside>
     </div>
 
     <Timeline date={date} from={from} to={to} playing={playing} onPlay={()=>{stopTour(false);setHasSelectedDay(true);setPlaying(value=>!value)}}
-      onSelect={selectDate} series={series} historicalDays={historicalCalendar} historyReady={Boolean(actual.days)} harmonized={harmonized} onRange={range} metric={metric} view={calendarView}
+      onSelect={selectDate} series={series} historicalCalendar={historicalCalendar} historyReady={Boolean(actual.days)} harmonized={harmonized} onRange={range} metric={metric} view={calendarView}
       onMetric={value=>setSettings(current=>({...current,metric:value}))} onView={value=>setSettings(current=>({...current,calendarView:value}))}/>
+    </div>
     <footer className="footer mono"><span><span className="live-dot"/> {historical?'HISTORICAL TELEMETRY':'DEMO TELEMETRY'} <i/> KEPLER.GL</span><span><TriangleAlert size={12}/> {historical?'NASA FIRMS OBSERVATIONS':'SYNTHETIC FIRE OBSERVATIONS'}</span></footer>
     {message&&<div className="toast" role="status">{message}</div>}
 

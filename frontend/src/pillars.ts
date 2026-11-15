@@ -22,6 +22,13 @@ const shades = [.79, .67, .96, 1]
 const colors = [[.48,.037,.038],[1,.24,.028],[1,.68,.135]]
 type GL = WebGL2RenderingContext
 
+// Keep the existing low-FRP slope and gradually compress taller columns.
+const pillarHeightKneeMw = 50
+const lowFrpMetersPerMw = 158
+export function pillarHeightMeters(frpMw:number) {
+  return lowFrpMetersPerMw*pillarHeightKneeMw*Math.asinh(Math.max(0,frpMw)/pillarHeightKneeMw)
+}
+
 export class FirePillars implements CustomLayerInterface {
   readonly id = 'fire-pillars'
   readonly type = 'custom'
@@ -69,7 +76,8 @@ export class FirePillars implements CustomLayerInterface {
     const vertices: number[] = []
     for (const cell of cells) {
       if (cell.raw === null) continue
-      const height = cell.raw * (harmonized ? calibration.dailyFrp[cell.pass] : 1) * 158
+      const frp = cell.raw * (harmonized ? calibration.dailyFrp[cell.pass] : 1)
+      const height = pillarHeightMeters(frp)
       const half = .72
       const coordinates = [[-half,-half],[half,-half],[half,half],[-half,half]]
         .map(([x,y]) => MercatorCoordinate.fromLngLat(offset(cell.center,x,y)))

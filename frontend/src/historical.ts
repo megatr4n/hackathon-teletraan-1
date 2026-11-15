@@ -170,15 +170,15 @@ export function historicalCalendarValue(date:string, day:ActualDay|undefined, me
   const count=metric==='count'
   const afterTransition=date>=snppArchiveStart
   const viirs=day?.[count?'viirsCount':'viirs']??null
-  if(afterTransition&&(!harmonized||viirs!==null)){
-    return {value:viirs,source:'VIIRS S-NPP',details:viirs===null?'No VIIRS S-NPP value':undefined}
+  if(afterTransition&&viirs!==null){
+    return {value:viirs,source:'VIIRS S-NPP',details:undefined}
   }
-  if(harmonized){
+  if(afterTransition||harmonized){
     const modisEstimate=day?.[count?'correctedCount':'corrected']??null
     const missing=afterTransition?'No VIIRS or MODIS value':'No MODIS value to harmonize'
     return {
       value:modisEstimate,
-      source:'Adjusted MODIS (estimate)',
+      source:'Harmonized MODIS (estimate)',
       details:modisEstimate===null?missing:undefined,
     }
   }
@@ -186,19 +186,24 @@ export function historicalCalendarValue(date:string, day:ActualDay|undefined, me
   return {value:modis,source:'MODIS',details:modis===null?'No MODIS value':undefined}
 }
 
-export function historicalCells(rows:CellRow[], harmonized:boolean):MapCell[] {
+export function historicalCells(rows:CellRow[], date:string, harmonized:boolean):MapCell[] {
   const groups=new Map<string,CellRow[]>()
   for(const row of rows){
     const group=groups.get(row.cell_id)
     if(group)group.push(row)
     else groups.set(row.cell_id,[row])
   }
+  const afterTransition=date>=snppArchiveStart
+  const modisValue=(row:CellRow)=>{
+    if(row.frp_sum_mw===null||!(afterTransition||harmonized))return row.frp_sum_mw
+    return row.pass==='unknown'?null:row.frp_sum_mw*calibration.dailyFrp[row.pass]
+  }
   return Array.from(groups,([id,group])=>{
+    const viirs=group.filter(row=>row.platform==='snpp')
     const modis=group.filter(row=>row.platform!=='snpp')
-    const visual=modis.length?modis:group
-    const value=(row:CellRow)=>row.frp_sum_mw===null?null:row.frp_sum_mw*(harmonized&&row.platform!=='snpp'&&row.pass!=='unknown'?calibration.dailyFrp[row.pass]:1)
-    return {id,center:group[0].center,geometry:group[0].geometry,raw:nullableSum(visual.map(value)),
-      weight:group.reduce((sum,row)=>sum+(row.detection_count??0),0),pass:visual.some(row=>row.pass==='day')?'day':'night'}
+    const viirsFrp=afterTransition?nullableSum(viirs.map(row=>row.frp_sum_mw)):null
+    return {id,center:group[0].center,geometry:group[0].geometry,raw:viirsFrp??nullableSum(modis.map(modisValue)),
+      weight:group.reduce((sum,row)=>sum+(row.detection_count??0),0),pass:group.some(row=>row.pass==='day')?'day':'night'}
   })
 }
 
