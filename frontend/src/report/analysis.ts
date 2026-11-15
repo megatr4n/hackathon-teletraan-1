@@ -13,7 +13,7 @@ export type HistoricalReport = {
   report_start:string; report_end:string; day:ReportDay; series:ReportDay[]; period:Summary[]
   methodology:Record<string,unknown>
 }
-export const reportVersion='firms-evidence-v1'
+export const reportVersion='firms-evidence-v2'
 export const viirsArchiveStart='2012-01-20'
 export const platformLabels={terra:'Terra MODIS',aqua:'Aqua MODIS',snpp:'S-NPP VIIRS'}
 export const finite=(n:unknown):n is number=>typeof n==='number'&&Number.isFinite(n)
@@ -30,14 +30,18 @@ export function quantile(values:number[],q:number):number|null {
   const sorted=[...values].sort((a,b)=>a-b), index=(sorted.length-1)*q, lo=Math.floor(index), hi=Math.ceil(index)
   return sorted[lo]+(sorted[hi]-sorted[lo])*(index-lo)
 }
-export function dailySeries(report:HistoricalReport) {
-  return report.series.map(day=>{
-    const raw=sum(day.platforms.filter(p=>p.platform!=='snpp').map(p=>p.detection_count))
-    return {date:day.date,raw,adjusted:raw===null?null:raw*calibration.hotspots[report.pass],
-      viirs:day.date<viirsArchiveStart?null:day.platforms.find(p=>p.platform==='snpp')?.detection_count??null}
-  })
+export const aquaArchiveStart='2002-07-04'
+
+export function dailyCount(day:ReportDay,pass:Pass) {
+  const terra=day.platforms.find(p=>p.platform==='terra')?.detection_count??null
+  const aqua=day.date<aquaArchiveStart?null:day.platforms.find(p=>p.platform==='aqua')?.detection_count??null
+  const viirs=day.date<viirsArchiveStart?null:day.platforms.find(p=>p.platform==='snpp')?.detection_count??null
+  return {date:day.date,raw:sum([terra,aqua]),aqua,adjusted:aqua===null?null:aqua*calibration.hotspots[pass],viirs}
 }
-export type DailyCount=ReturnType<typeof dailySeries>[number]
+export function dailySeries(report:HistoricalReport) {
+  return report.series.map(day=>dailyCount(day,report.pass))
+}
+export type DailyCount=ReturnType<typeof dailyCount>
 export function bins<T extends {date:string}>(days:T[],monthly:boolean):T[][] {
   const groups=new Map<string,T[]>()
   for(const day of days){
@@ -50,21 +54,21 @@ export function countBins(report:HistoricalReport) {
   const monthly=report.series.length>120
   return {monthly,rows:bins(dailySeries(report),monthly).map(days=>({
     date:days[0].date, end:days.at(-1)!.date, requested:days.length,
-    ...Object.fromEntries((['raw','adjusted','viirs'] as const).map(key=>[key,mean(days.map(d=>d[key]))])),
-    nModis:days.filter(d=>d.raw!==null).length,nViirs:days.filter(d=>d.viirs!==null).length,
-  })) as {date:string;end:string;requested:number;raw:number|null;adjusted:number|null;viirs:number|null;nModis:number;nViirs:number}[]}
+    raw:mean(days.map(d=>d.raw)),adjusted:mean(days.map(d=>d.adjusted)),viirs:mean(days.map(d=>d.viirs)),
+    nModis:days.filter(d=>d.raw!==null).length,nAqua:days.filter(d=>d.aqua!==null).length,nViirs:days.filter(d=>d.viirs!==null).length,
+  }))}
 }
 export function pairedCounts(days:DailyCount[]) {
-  const pairs=days.filter((d):d is DailyCount & {raw:number;adjusted:number;viirs:number}=>d.raw!==null&&d.adjusted!==null&&d.viirs!==null)
+  const pairs=days.filter((d):d is DailyCount & {aqua:number;adjusted:number;viirs:number}=>d.aqua!==null&&d.adjusted!==null&&d.viirs!==null)
   const reference=sum(pairs.map(d=>d.viirs))
-  const stats=(key:'raw'|'adjusted')=>{
+  const stats=(key:'aqua'|'adjusted')=>{
     const errors=pairs.map(d=>d[key]-d.viirs)
     const absolute=sum(errors.map(Math.abs))
     return {meanDifference:mean(errors),mae:mean(errors.map(Math.abs)),
       wape:reference&&absolute!==null?100*absolute/reference:null,
       bias:reference?100*(sum(errors)??0)/reference:null}
   }
-  return {n:pairs.length,raw:stats('raw'),adjusted:stats('adjusted')}
+  return {n:pairs.length,rawAqua:stats('aqua'),adjusted:stats('adjusted')}
 }
 // Block stale/incomplete payloads before making a scientific document.
 export function validateReport(report:HistoricalReport,from:string,to:string,queryId?:string) {
@@ -120,7 +124,10 @@ export function validateReport(report:HistoricalReport,from:string,to:string,que
 export function reportEvidence(report:HistoricalReport,generatedAt:string) {
   validateReport(report,report.report_start,report.report_end)
   return {report_version:reportVersion,generated_at_utc:generatedAt,source_payload:report,
-    derivations:{count_formula:'(Terra detections + Aqua detections) * K_COUNT[pass]; sum available records; all missing = null',
+    derivations:{count_formula:'Aqua MODIS detections * K_COUNT[pass]',
+      raw_modis_formula:'Sum available Terra and Aqua detections. Null if neither has records.',
+      comparison_baseline:'Raw Aqua MODIS and adjusted Aqua MODIS on the same dates as observed VIIRS',
+      aqua_archive_start:aquaArchiveStart,
       coefficients:calibration.hotspots,coefficient_source:'config/modis_viirs_coefficients.csv',
       selected_coefficient:calibration.hotspots[report.pass],viirs_archive_start:viirsArchiveStart,
       aggregation:report.series.length>120?'calendar-month mean of daily values with records':'daily',
