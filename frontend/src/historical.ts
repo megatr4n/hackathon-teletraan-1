@@ -7,25 +7,26 @@ import type { Metric, Snapshot } from './pins'
 const configuredApi = import.meta.env.VITE_FIRMS_API
 export const historicalApi = configuredApi===undefined?undefined:import.meta.env.DEV?'':configuredApi.replace(/\/$/, '')
 
-export type Selection = { query_id: string; dataset_release: string }
+export type Selection = { query_id: string; dataset_release: string; dataset_manifest_sha256: string }
 
 const presets: Record<string,string> = {chernobyl:'ua-east',california:'us-west',amazon:'amazon',australia:'australia'}
 
-export function historicalRequest(settings:Snapshot) {
-  const {aoi,areaMode,region,focus,pass}=settings
-  let area
+export function historicalArea(settings:Snapshot) {
+  const {aoi,areaMode,region,focus}=settings
   if(areaMode==='custom'&&aoi?.type==='circle'){
-    area={kind:'circle',center:aoi.center,radius_km:aoi.radius}
+    return {kind:'circle',center:aoi.center,radius_km:aoi.radius}
   }else if(areaMode==='custom'&&aoi?.type==='lasso'){
-    area={kind:'geometry',geometry:areaPolygon(aoi)}
+    return {kind:'geometry',geometry:areaPolygon(aoi)}
   }else if(region){
-    area={kind:region.kind,id:region.id,parent_id:region.kind==='admin'?region.country:undefined}
+    return {kind:region.kind,id:region.id,parent_id:region.kind==='admin'?region.country:undefined}
   }else if(presets[focus.id]){
-    area={kind:'preset',id:presets[focus.id]}
-  }else{
-    area={kind:'circle',center:focus.center,radius_km:settings.radius}
+    return {kind:'preset',id:presets[focus.id]}
   }
-  return JSON.stringify({area,from:firstDate,to:lastDate,pass})
+  return {kind:'circle',center:focus.center,radius_km:settings.radius}
+}
+
+export function historicalRequest(settings:Snapshot) {
+  return JSON.stringify({area:historicalArea(settings),from:firstDate,to:lastDate,pass:settings.pass})
 }
 
 export async function historicalFetch(path:string, init?:RequestInit) {
@@ -70,7 +71,7 @@ type CellRow = Metrics & {
 
 export const gridParams='square_km=3'
 
-export function useHistorical(enabled:boolean, request:string, date:string) {
+export function useHistorical(enabled:boolean, request:string, date:string, showDailyCells:boolean) {
   const [query,setQuery]=useState<{key:string; days:Day[]}|null>(null)
   const [created,setCreated]=useState<{key:string; selection:Selection}|null>(null)
   const [map,setMap]=useState<{key:string; rows:CellRow[]; complete:boolean}|null>(null)
@@ -100,6 +101,7 @@ export function useHistorical(enabled:boolean, request:string, date:string) {
   },[enabled,key,request])
   const queryId=selection?.query_id
   const calendarReady=Boolean(current)
+  const calendarFailed=Boolean(queryId&&error?.key===key)
   useEffect(()=>{
     if(!queryId||calendarReady)return
     const controller=new AbortController()
@@ -111,16 +113,16 @@ export function useHistorical(enabled:boolean, request:string, date:string) {
     return ()=>controller.abort()
   },[queryId,calendarReady,key])
   useEffect(()=>{
-    if(!queryId||calendarReady)return
+    if(!queryId||!calendarFailed||calendarReady)return
     const controller=new AbortController()
     void historicalFetch('/queries/'+queryId+'/days/'+date+'?include_z_score=false',{signal:controller.signal})
       .then(response=>response.json())
       .then(value=>{if(!controller.signal.aborted)setActiveDay({key:mapKey,value})})
-      .catch(problem=>{if(!controller.signal.aborted)setError({key:mapKey,message:String(problem.message)})})
+      .catch(()=>{}) // Keep the calendar error and its retry action visible.
     return ()=>controller.abort()
-  },[queryId,date,mapKey,calendarReady])
+  },[queryId,date,mapKey,calendarReady,calendarFailed])
   useEffect(()=>{
-    if(!enabled||!queryId)return
+    if(!showDailyCells||!queryId||(!calendarReady&&!calendarFailed)||visible)return
     const controller=new AbortController()
     const signal=controller.signal
     const run=async()=>{
@@ -136,10 +138,10 @@ export function useHistorical(enabled:boolean, request:string, date:string) {
       if(!signal.aborted)setMap({key:mapKey,rows,complete:cursor===null})
     }
     void run().catch(problem=>{
-      if(!signal.aborted)setError({key:mapKey,message:String(problem.message)})
+      if(!signal.aborted&&!calendarFailed)setError({key:mapKey,message:String(problem.message)})
     })
     return ()=>controller.abort()
-  },[enabled,queryId,date,mapKey])
+  },[showDailyCells,queryId,date,mapKey,calendarReady,calendarFailed,visible])
   return {selection, days:current?.days, day:current?.days.find(row=>row.date===date)??(activeDay?.key===mapKey?activeDay.value:undefined),
     rows:visible?.rows, complete:visible?.complete,
     error:error?.key===key||error?.key===mapKey?error.message:null, retry:()=>retry(value=>value+1)}
