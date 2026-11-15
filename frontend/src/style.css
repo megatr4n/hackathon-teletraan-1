@@ -794,3 +794,16 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 .calendar-scale i { width:8px; height:8px; border-radius:1px; display:block }
 .calendar-scale .info-tip { width:15px; height:15px }
 .calendar-scale .info-tip svg { width:11px; height:11px }
+
+.puzzle-sparks { position:absolute; z-index:10; inset:0; pointer-events:none; overflow:visible }
+.puzzle-sparks i { position:absolute; left:50%; top:50%; width:7px; height:2px; border-radius:2px; opacity:0;
+  background:#ffd597; box-shadow:0 0 6px #f6863f; animation:puzzle-spark 1.35s var(--spark-delay) ease-out both }
+.puzzle-sparks i:nth-child(3n) { width:5px; background:#fff5e6; box-shadow:0 0 6px #ffe2ba }
+.puzzle-sparks i:nth-child(4n) { width:9px; background:#ff8d4d }
+@keyframes puzzle-spark {
+  0% { opacity:0; transform:translate(0,0) rotate(var(--spark-angle)) scale(.5) }
+  12% { opacity:1 }
+  60% { opacity:.9 }
+  100% { opacity:0; transform:translate(var(--spark-x),var(--spark-y)) rotate(var(--spark-angle)) scale(.2) }
+}
+@media(prefers-reduced-motion:reduce) { .puzzle-sparks { display:none } }

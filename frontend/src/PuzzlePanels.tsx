@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, type ReactNode } from 'react'
+import { useEffect, useId, useRef, type ReactNode, type CSSProperties } from 'react'
 import { prettyDate } from './data'
 import { MapPin } from 'lucide-react'
 import type { Puzzle } from './dailyPuzzle'
@@ -6,6 +6,21 @@ import type { useDailyPuzzle } from './useDailyPuzzle'
 import { Button } from './ui'
 
 type PuzzleState=ReturnType<typeof useDailyPuzzle>
+
+function PuzzleSparks() {
+  return <div className="puzzle-sparks" aria-hidden="true">
+    {Array.from({length:36},(_,index)=>{
+      const angle=index*2.399963
+      const radius=42+(index*31)%116
+      return <i key={index} style={{
+        '--spark-x':Math.cos(angle)*radius+'px',
+        '--spark-y':Math.sin(angle)*radius*.72+'px',
+        '--spark-angle':angle+'rad',
+        '--spark-delay':(index%6)*28+'ms',
+      } as CSSProperties}/>
+    })}
+  </div>
+}
 
 export function PuzzleDropdown({game,onRegion,trigger}:{game:PuzzleState;onRegion:(puzzle:Puzzle)=>void;trigger:(id:string)=>ReactNode}) {
   const root=useRef<HTMLDivElement>(null)
@@ -52,6 +67,7 @@ export function PuzzleDropdown({game,onRegion,trigger}:{game:PuzzleState;onRegio
           </Button>)}
         </div>
         {hint!==null&&<p className="puzzle-hint">{puzzle.hints[hint]}</p>}
+        {feedback?.kind==='correct'&&<PuzzleSparks/>}
         <div className="puzzle-result" aria-live="polite" aria-atomic="true">
           {feedback?<p data-kind={feedback.kind}>{feedback.kind==='incorrect'?'Incorrect. ':''}{feedback.text}</p>:
             solved?<p data-kind="correct">Solved on {prettyDate(progress!.date)}.</p>:null}
