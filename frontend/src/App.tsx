@@ -13,7 +13,8 @@ import { Button, Segmented } from './ui'
 import { PuzzleDropdown } from './PuzzlePanels'
 import { puzzleFocus, type Puzzle } from './dailyPuzzle'
 import { useDailyPuzzle } from './useDailyPuzzle'
-import { historicalApi, historicalCells, historicalRequest, useHistorical, actualDay, historicalCalendarValue, scoreDetails, actualPeriod, snppArchiveStart } from './historical'
+import type { HistoricalReport } from './statisticalReport'
+import { historicalApi, historicalFetch, gridParams, historicalCells, historicalRequest, useHistorical, actualDay, historicalCalendarValue, scoreDetails, actualPeriod, snppArchiveStart } from './historical'
 import { snapshotFromUrl, updateViewUrl } from './viewLink'
 
 import { cinematicTrack, tourRegions, type CameraCommand } from './cameraTour'
@@ -75,8 +76,8 @@ function RadiusField({value,onChange}:{value:number;onChange:(value:number)=>voi
     onKeyDown={event=>{if(event.key==='Enter')event.currentTarget.blur()}}/>
 }
 
-function download(name:string,content:string,type:string) {
-  const url=URL.createObjectURL(new Blob([content],{type}))
+function download(name:string,content:string|Blob,type?:string) {
+  const url=URL.createObjectURL(content instanceof Blob?content:new Blob([content],{type}))
   const link=document.createElement('a')
   link.href=url
   link.download=name
@@ -179,8 +180,7 @@ export function App() {
   useEffect(()=>{
     if(!game.open&&!orbiting)updateViewUrl(settings)
   },[game.open,orbiting,settings])
-  const historicalPreviewEnabled=false
-  const historical=historicalPreviewEnabled&&historicalApi!==undefined&&!game.open
+  const historical=historicalApi!==undefined&&!game.open
   const viirs=date>=(historical?snppArchiveStart:viirsStart)
   const actual=useHistorical(historical,historicalRequest(settings),date)
   const cells=useMemo(()=>historical?historicalCells(actual.rows??[],harmonized):demoCells,[historical,actual.rows,harmonized,demoCells])
@@ -361,29 +361,53 @@ export function App() {
     setMessage('Opened '+pin.name)
   }
   async function exportReport() {
+    const selection=actual.selection
+    if(historical&&!selection)return
     setExportingReport(true)
     try{
-      const {exportStatisticalReport}=await import('./statisticalReport')
-      await exportStatisticalReport({
-        settings,day:stats,period,estimates,viirs,adjustment,delta,severity,activeCells:cells.length,
-        wape:calibrationAccuracy.holdout_daytime_wape_2025,bias:calibrationAccuracy.west_us_bias,
-      })
+      const report=await import('./statisticalReport')
+      if(historical&&selection){
+        const params=new URLSearchParams({date,start:from,end:to})
+        const response=await historicalFetch('/queries/'+selection.query_id+'/report-data?'+params)
+        const observations:HistoricalReport=await response.json()
+        await report.exportHistoricalReport(settings,observations,from,to)
+      }else{
+        await report.exportStatisticalReport({
+          settings,day:stats,period,estimates,viirs,adjustment,delta,severity,activeCells:cells.length,
+          wape:calibrationAccuracy.holdout_daytime_wape_2025,bias:calibrationAccuracy.west_us_bias,
+        })
+      }
       setMessage('Statistical report exported')
     }catch(error){
       console.error('Statistical report export failed',error)
-      setMessage('Could not export the statistical report')
+      setMessage(error instanceof Error ? error.message : 'Could not export the statistical report')
     }finally{
       setExportingReport(false)
     }
   }
-  function exportData(format:'csv'|'geojson') {
+  async function exportData(format:'csv'|'geojson') {
+    const name='teletraan-1-'+focus.id.replace(/[^a-z0-9-]/gi,'-')+'-'+date
+    if(historical){
+      const selection=actual.selection
+      if(!selection)return
+      try{
+        const params=new URLSearchParams(gridParams)
+        params.set('date',date)
+        params.set('format',format)
+        const response=await historicalFetch('/queries/'+selection.query_id+'/export?'+params)
+        download(name+'.'+format,await response.blob())
+        setMessage(format.toUpperCase()+' exported')
+      }catch(error){
+        setMessage(error instanceof Error ? error.message : 'Could not download the historical export')
+      }
+      return
+    }
     if(!cells.length)return
     const values=(cell:Cell)=>{
       const sensors=cellObservations(cell,pass)
       return {date,selected_frp_mw:harmonized?sensors.correctedFrp:cell.raw,harmonized_modis_frp_mw:sensors.correctedFrp,raw_modis_hotspots:sensors.rawCount,harmonized_modis_hotspots:sensors.correctedCount,
         viirs_frp_mw:viirs?sensors.viirsFrp:null,viirs_hotspots:viirs?sensors.viirsCount:null,mode:harmonized?'harmonized':'raw',source:'demo'}
     }
-    const name='teletraan-1-'+focus.id.replace(/[^a-z0-9-]/gi,'-')+'-'+date
     if(format==='csv'){
       const header='cell_id,date,latitude,longitude,pass,selected_frp_mw,raw_modis_frp_mw,harmonized_modis_frp_mw,raw_modis_hotspots,harmonized_modis_hotspots,viirs_frp_mw,viirs_hotspots,mode,source'
       const rows=demoCells.map(cell=>{
@@ -563,9 +587,9 @@ export function App() {
           </div>
         </div>
         <div className="export-buttons">
-          <Button className="csv-button" disabled={!cells.length} onClick={()=>exportData('csv')}><ArrowDownToLine size={15}/> Download Filtered CSV<ArrowUpRight size={13} className="button-tail"/></Button>
-          <Button className="geojson-button" disabled={!cells.length} onClick={()=>exportData('geojson')}><CodeXml size={15}/> Export GeoJSON for QGIS<ArrowUpRight size={13} className="button-tail"/></Button>
-          <Button className="geojson-button" disabled={exportingReport} onClick={exportReport}><FileText size={15}/> {exportingReport?'Preparing PDF…':'Export Statistical Report (PDF)'}<ArrowUpRight size={13} className="button-tail"/></Button>
+          <Button className="csv-button" disabled={historical?!actual.selection:!cells.length} onClick={()=>exportData('csv')}><ArrowDownToLine size={15}/> Download Filtered CSV<ArrowUpRight size={13} className="button-tail"/></Button>
+          <Button className="geojson-button" disabled={historical?!actual.selection:!cells.length} onClick={()=>exportData('geojson')}><CodeXml size={15}/> Export GeoJSON for QGIS<ArrowUpRight size={13} className="button-tail"/></Button>
+          <Button className="geojson-button" disabled={exportingReport||(historical&&!actual.selection)} onClick={exportReport}><FileText size={15}/> {exportingReport?'Preparing PDF…':'Export Statistical Report (PDF)'}<ArrowUpRight size={13} className="button-tail"/></Button>
         </div>
       </aside>
     </div>

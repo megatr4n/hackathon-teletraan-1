@@ -21,7 +21,15 @@ Build the nginx image from the repository root with `docker build -f frontend/Do
 
 ## Telemetry and estimates
 
-This frontend runs in demo mode. MODIS and VIIRS values, hotspot counts and exports use synthetic observations. The FastAPI service remains a separate part of the repository. VIIRS is shown from 2012 onward, and its period averages use the covered days only. The same filtered daily observations drive the map, calendar, selected-day statistics and exports.
+The frontend uses demo mode when `VITE_FIRMS_API` is unset. To enable the
+historical archive, set `VITE_FIRMS_API=http://127.0.0.1:8000` in
+`frontend/.env.local` and restart Vite. Vite proxies `/api/v2` to that address.
+For production, set the API URL at build time, or set it to an empty value
+when the hosting server routes same-origin `/api/v2` requests to the backend.
+Historical CSV and GeoJSON use the map's query, date and 3 km grid. The PDF
+uses observed day and period metrics from the same query.
+
+In demo mode, MODIS and VIIRS values, hotspot counts and exports use synthetic observations. The FastAPI service remains a separate part of the repository. VIIRS is shown from 2012 onward, and its period averages use the covered days only. The same filtered daily observations drive the map, calendar, selected-day statistics and exports.
 
 Update `../config/modis_viirs_coefficients.csv` and rebuild to change calibration. `src/calibration.ts` validates and maps the shared CSV headers. The original supplied row includes an extra empty field before the two daily FRP values, which the parser accepts.
 
