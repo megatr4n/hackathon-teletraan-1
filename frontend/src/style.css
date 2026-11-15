@@ -826,7 +826,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 }
 .weekly-year .year { font-size:11px }
 .calendar-week { position:relative; grid-row:1; min-width:0; height:12px; padding:0; border:1px solid #ffffff12; border-radius:1px }
-.calendar-week:disabled { opacity:.28 }
 .calendar-week:not(:disabled):hover,.calendar-week[aria-pressed=true],.week-day button[aria-pressed=true] {
   border-color:#ffdfad; box-shadow:0 0 0 1px #ffa56e; z-index:1 }
 .calendar-week:not(:disabled):focus-visible,.week-day button:focus-visible { outline:2px solid #ffdfad; z-index:1 }

@@ -177,8 +177,10 @@ export function Timeline({date,daySelected,from,to,playing,onPlay,onDay,onWeek,s
   const min=weekIndex(from),max=weekIndex(to),value=weekIndex(date)
   const rangeFor=(week:CalendarWeek)=>weekRange(week,from,to)
   function chooseWeek(index:number,button?:HTMLButtonElement) {
-    if(index<min||index>max)return
-    onWeek(rangeFor(calendarWeeks[index]).from)
+    const week=calendarWeeks[index]
+    if(!week)return
+    if(index>=min&&index<=max)onWeek(rangeFor(week).from)
+    else if(!button)return
     if(button){
       opener.current=button
       setOpenWeek(index)
@@ -204,12 +206,10 @@ export function Timeline({date,daySelected,from,to,playing,onPlay,onDay,onWeek,s
     const deviation=Math.sqrt(powers.reduce((sum,power)=>sum+(power-mean)**2,0)/powers.length)||1
     return powers.map(power=>(power-mean)/deviation)
   },[series,activity,harmonized,historicalDays])
-  const weekly=useMemo(()=>calendarWeeks.map(week=>readWeek(values,weekRange(week,from,to),metric==='z')),
-    [from,to,metric,values])
-  const frpComparisons=useMemo(()=>metric==='frp'&&activity?calendarWeeks.map(week=>{
-    const range=weekRange(week,from,to)
-    return {raw:readWeek(activity.raw,range).value,adjusted:readWeek(activity.adjusted,range).value}
-  }):undefined,[activity,from,to,metric])
+  const weekly=useMemo(()=>calendarWeeks.map(week=>readWeek(values,week,metric==='z')),[metric,values])
+  const frpComparisons=useMemo(()=>metric==='frp'&&activity?calendarWeeks.map(week=>({
+    raw:readWeek(activity.raw,week).value,adjusted:readWeek(activity.adjusted,week).value,
+  })):undefined,[activity,metric])
   const zCeiling=useMemo(()=>{
     if(metric!=='z')return 1
     const magnitudes=values.flatMap(value=>value===null?[]:[Math.abs(value)]).sort((a,b)=>a-b)
@@ -220,7 +220,7 @@ export function Timeline({date,daySelected,from,to,playing,onPlay,onDay,onWeek,s
     if(metric==='z')return Math.min(1,.125+.875*Math.log1p(Math.abs(reading))/zCeiling)
     return (week?activity?.weekScale:activity?.dayScale)?.heat(reading)??0
   }
-  const shownWeek=openWeek!==null&&openWeek>=min&&openWeek<=max?calendarWeeks[openWeek]:undefined
+  const shownWeek=openWeek===null?undefined:calendarWeeks[openWeek]
   const selection=rangeFor(calendarWeeks[value])
   return <section ref={panel} className="timeline" aria-label="Burning activity calendar"
     onKeyDown={event=>{if(event.key==='Escape'&&shownWeek){event.preventDefault();closeWeek()}}}>
@@ -254,7 +254,7 @@ export function Timeline({date,daySelected,from,to,playing,onPlay,onDay,onWeek,s
           {view==='grid'&&activity?.weekScale&&<CalendarScaleLegend scale={activity.weekScale} metric={metric} harmonized={harmonized}/>}
           <p>{historical&&!historyReady?'Loading archive values…':metric==='z'?
             'Each week shows the daily Z-score farthest from zero. Blue is below baseline.':
-            'Monday–Sunday totals. Hover for coverage, or open a week to select a day.'}</p>
+            'Monday–Sunday totals across the archive. From–To controls playback and map selection.'}</p>
           {metric==='frp'&&view==='grid'&&harmonized&&<div className="frp-adjustment-key">
             <span>Blue edge · lower FRP</span><span>Amber edge · higher FRP</span>
           </div>}
@@ -268,23 +268,25 @@ export function Timeline({date,daySelected,from,to,playing,onPlay,onDay,onWeek,s
     </div>
     {shownWeek&&overlap!==collapsedCalendar&&<section ref={details} className="week-details" role="dialog" aria-label="Week details">
       <div className="week-details-header">
-        <strong>{weekLabel(rangeFor(shownWeek),weekly[shownWeek.index],metric,frpComparisons?.[shownWeek.index])}</strong>
+        <strong>{weekLabel(shownWeek,weekly[shownWeek.index],metric,frpComparisons?.[shownWeek.index])}</strong>
         <Button aria-label="Close week" onClick={closeWeek}><X size={14}/></Button>
       </div>
       <div className="week-days">
         {Array.from({length:7},(_,i)=>{
           const day=iso(Date.parse(shownWeek.monday)+i*DAY)
-          const enabled=day>=from&&day<=to
+          const inArchive=day>=firstDate&&day<=lastDate
+          const selectable=day>=from&&day<=to
           const index=dateIndex(day,firstDate)
-          const reading=enabled?values[index]:null
+          const reading=inArchive?values[index]:null
           const source=historicalDays?.[index]
           const unit=metric==='count'?' hotspots':metric==='frp'?' MW':''
-          const title='Day '+(i+1)+' · '+day+' · '+(!enabled?'Outside selected dates':reading===null?
-            (source?.details??'No observed value'):formatBand(reading)+unit+(source?' · '+source.source:''))
+          const detail=!inArchive?'Outside archive':reading===null?
+            (source?.details??'No observed value'):formatBand(reading)+unit+(source?' · '+source.source:'')
+          const title='Day '+(i+1)+' · '+day+' · '+detail+(inArchive&&!selectable?' · Outside From–To':'')
           return <div key={day} className="week-day">
             <span>Day {i+1}</span>
-            <button type="button" data-date={day} aria-label={title} title={title} disabled={!enabled} aria-pressed={daySelected&&date===day}
-              style={{backgroundColor:paint(reading,getHeat(reading,false),metric,historical)}} onClick={()=>onDay(day)}/>
+            <button type="button" data-date={day} aria-label={title} title={title} disabled={!inArchive} aria-disabled={!selectable} aria-pressed={daySelected&&date===day}
+              style={{backgroundColor:paint(reading,getHeat(reading,false),metric,historical)}} onClick={()=>{if(selectable)onDay(day)}}/>
           </div>
         })}
       </div>
@@ -307,14 +309,13 @@ export function Timeline({date,daySelected,from,to,playing,onPlay,onDay,onWeek,s
           </svg>}
           {weeks.map((week,column)=>{
             const reading=weekly[week.index]
-            const disabled=week.index<min||week.index>max
             const comparison=frpComparisons?.[week.index]
             const delta=frpDifference(comparison)
-            const adjustment=harmonized&&view==='grid'&&!disabled&&delta!==null&&Math.abs(delta)>=.005?
+            const adjustment=harmonized&&view==='grid'&&delta!==null&&Math.abs(delta)>=.005?
               (delta<0?'lower':'higher'):undefined
-            const title=disabled?week.from+' – '+week.to+' · Outside selected dates':weekLabel(rangeFor(week),reading,metric,comparison)
+            const title=weekLabel(week,reading,metric,comparison)
             return <button type="button" className="calendar-week" key={week.index} data-week={week.from} data-frp-adjustment={adjustment}
-              disabled={disabled} aria-label={title} title={title}
+              aria-label={title} title={title}
               aria-pressed={value===week.index} aria-haspopup="dialog" aria-expanded={shownWeek?.index===week.index}
               style={{gridColumn:column+2,backgroundColor:view==='grid'?paint(reading.value,getHeat(reading.value,true),metric,historical):undefined}}
               onClick={event=>chooseWeek(week.index,event.currentTarget)}/>
