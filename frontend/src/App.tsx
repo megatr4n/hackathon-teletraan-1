@@ -210,6 +210,13 @@ export function App() {
     const rank=values.filter(value=>value>current).length+1
     return {median,delta:median>0?100*(current/median-1):null,rank,percentile:100*values.filter(value=>value<=current).length/values.length}
   },[harmonized,observedDay.corrected,observedDay.raw,observedDays])
+  const nearestObserved=useMemo(()=>{
+    if(!historical||!actual.rows||actual.rows.length)return undefined
+    const selected=Date.parse(date)
+    return observedDays.filter(day=>day.date>=from&&day.date<=to&&(day.values.rawCount!==null||day.values.viirsCount!==null))
+      .reduce<string|undefined>((nearest,day)=>
+        !nearest||Math.abs(Date.parse(day.date)-selected)<Math.abs(Date.parse(nearest)-selected)?day.date:nearest,undefined)
+  },[actual.rows,date,from,historical,observedDays,to])
   const historicalCalendar=useMemo(()=>{
     if(!historical)return undefined
     const byDate=new Map(observedDays.map(day=>[day.date,day.values]))
@@ -227,9 +234,10 @@ export function App() {
 
   useEffect(()=>{
     if(!playing)return
-    const timer=window.setInterval(()=>setSettings(current=>({...current,date:current.date>=to?from:iso(Date.parse(current.date)+DAY)})),460)
-    return ()=>clearInterval(timer)
-  },[playing,from,to])
+    if(historical&&!actual.rows)return
+    const timer=window.setTimeout(()=>setSettings(current=>({...current,date:current.date>=to?from:iso(Date.parse(current.date)+DAY)})),460)
+    return ()=>clearTimeout(timer)
+  },[playing,from,to,date,historical,actual.rows])
   useEffect(()=>{
     if(!message)return
     const timer=window.setTimeout(()=>setMessage(''),3200)
@@ -499,6 +507,9 @@ export function App() {
           </div>
           {historical&&actual.error&&<p className="sensor-note" role="alert">{actual.error} <Button onClick={actual.retry}>Retry</Button></p>}
           {historical&&!actual.days&&!actual.error&&<p className="sensor-note" role="status">Loading the 2000–2025 archive…</p>}
+          {historical&&actual.rows?.length===0&&actual.days&&<p className="sensor-note">No detections in this area on {date} for the selected pass.
+            {nearestObserved&&<> <Button onClick={()=>selectDate(nearestObserved,true)}>Go to {nearestObserved}</Button></>}
+          </p>}
           {historical&&actual.complete===false&&<p className="sensor-note">Map display limit reached. CSV and GeoJSON include the full available selection.</p>}
           <section className="analysis-card calibration">
             <h4><Layers3 size={14}/> Scientific intercalibration</h4>
