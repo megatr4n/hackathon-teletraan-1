@@ -16,7 +16,7 @@ export const initialSnapshot:Snapshot={
   focus:scenarios[0],region:null,date:lastDate,from:firstDate,to:lastDate,pass:'all',harmonized:true,
   areaMode:'countries',aoi:null,radius:50,query:'',options:defaultOptions,
   camera:{lon:scenarios[0].center[0],lat:scenarios[0].center[1],zoom:scenarios[0].zoom,bearing:36,pitch:48},
-  metric:'frp',calendarView:'grid',
+  metric:'count',calendarView:'grid',
 }
 const defaults:Pin[]=scenarios.map(focus=>({id:'demo-'+focus.id,name:focus.short,snapshot:{...initialSnapshot,focus,date:focus.date,
   camera:{...initialSnapshot.camera,lon:focus.center[0],lat:focus.center[1],zoom:focus.zoom}}}))
