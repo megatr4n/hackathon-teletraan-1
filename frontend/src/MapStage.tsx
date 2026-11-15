@@ -478,7 +478,7 @@ export function MapStage({focus,date,cells,harmonized,aoi,tool,onArea,onCirclePr
       </svg></div>}
     {tool && <div className="draw-hint"><Target size={14}/>{tool==='circle'?'Drag from the center to set the radius':'Drag to outline your area'}</div>}
     <div className="map-legend">
-      <div className="legend-title"><Layers3 size={13}/> FIRE RADIATIVE POWER <InfoTip label="Fire radiative power" help={frpHelp}/></div>
+      <div className="legend-title"><Layers3 size={13}/> FIRE RADIATIVE POWER <InfoTip label="Fire radiative power" help={frpHelp+' Taller pillars indicate higher FRP. The height scale compresses extremes so lower and moderate readings remain distinguishable.'}/></div>
       <div className="thermal-ramp" />
       <div className="legend-scale"><span>0</span><span>50</span><span>100</span><span>150+ MW</span></div>
       <div className="legend-z"><span/><b>Z ≥ 1.5</b><span/><b>Z ≥ 2.5</b></div>
