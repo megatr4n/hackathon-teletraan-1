@@ -8,25 +8,26 @@ import { datesInRange } from './calendarWeeks'
 const configuredApi = import.meta.env.VITE_FIRMS_API
 export const historicalApi = configuredApi===undefined?undefined:import.meta.env.DEV?'':configuredApi.replace(/\/$/, '')
 
-export type Selection = { query_id: string; dataset_release: string }
+export type Selection = { query_id: string; dataset_release: string; dataset_manifest_sha256: string }
 
 const presets: Record<string,string> = {chernobyl:'ua-east',california:'us-west',amazon:'amazon',australia:'australia'}
 
-export function historicalRequest(settings:Snapshot) {
-  const {aoi,areaMode,region,focus,pass}=settings
-  let area
+export function historicalArea(settings:Snapshot) {
+  const {aoi,areaMode,region,focus}=settings
   if(areaMode==='custom'&&aoi?.type==='circle'){
-    area={kind:'circle',center:aoi.center,radius_km:aoi.radius}
+    return {kind:'circle',center:aoi.center,radius_km:aoi.radius}
   }else if(areaMode==='custom'&&aoi?.type==='lasso'){
-    area={kind:'geometry',geometry:areaPolygon(aoi)}
+    return {kind:'geometry',geometry:areaPolygon(aoi)}
   }else if(region){
-    area={kind:region.kind,id:region.id,parent_id:region.kind==='admin'?region.country:undefined}
+    return {kind:region.kind,id:region.id,parent_id:region.kind==='admin'?region.country:undefined}
   }else if(presets[focus.id]){
-    area={kind:'preset',id:presets[focus.id]}
-  }else{
-    area={kind:'circle',center:focus.center,radius_km:settings.radius}
+    return {kind:'preset',id:presets[focus.id]}
   }
-  return JSON.stringify({area,from:firstDate,to:lastDate,pass})
+  return {kind:'circle',center:focus.center,radius_km:settings.radius}
+}
+
+export function historicalRequest(settings:Snapshot) {
+  return JSON.stringify({area:historicalArea(settings),from:firstDate,to:lastDate,pass:settings.pass})
 }
 
 export async function historicalFetch(path:string, init?:RequestInit) {
@@ -73,11 +74,9 @@ export const gridParams='square_km=3'
 
 type MapDay = {date:string;rows:CellRow[];complete:boolean}
 
-export function useHistorical(enabled:boolean, request:string, date:string, mapFrom:string, mapTo:string) {
-  const cellCache=useRef({queryId:'',days:new Map<string,MapDay>()})
+export function useHistorical(enabled:boolean, request:string, date:string) {
   const [query,setQuery]=useState<{key:string; days:Day[]}|null>(null)
   const [created,setCreated]=useState<{key:string; selection:Selection}|null>(null)
-  const [map,setMap]=useState<{key:string; days:MapDay[]}|null>(null)
   const [activeDay,setActiveDay]=useState<{key:string; value:Day}|null>(null)
   const [error,setError]=useState<{key:string; message:string}|null>(null)
   const [attempt,retry]=useState(0)
@@ -85,8 +84,6 @@ export function useHistorical(enabled:boolean, request:string, date:string, mapF
   const current=enabled&&query?.key===key?query:null
   const selection=enabled&&created?.key===key?created.selection:undefined
   const dayKey=key+'\n'+date
-  const mapKey=key+'\n'+mapFrom+'\n'+mapTo
-  const visible=enabled&&map?.key===mapKey?map:null
   useEffect(()=>{
     if(!enabled)return
     const controller=new AbortController()
@@ -121,31 +118,42 @@ export function useHistorical(enabled:boolean, request:string, date:string, mapF
     void historicalFetch('/queries/'+queryId+'/days/'+date+'?include_z_score=false',{signal:controller.signal})
       .then(response=>response.json())
       .then(value=>{if(!controller.signal.aborted)setActiveDay({key:dayKey,value})})
-      .catch(problem=>{if(!controller.signal.aborted)setError({key:dayKey,message:String(problem.message)})})
+      .catch(()=>{}) // The calendar can still supply the selected day's summary.
     return ()=>controller.abort()
   },[queryId,date,dayKey,calendarReady])
+  return {selection,key,days:current?.days,day:current?.days.find(row=>row.date===date)??(activeDay?.key===dayKey?activeDay.value:undefined),
+    error:error?.key===key?error.message:null,retry:()=>retry(value=>value+1)}
+}
+
+export async function loadHistoricalCells(queryId:string,date:string,signal:AbortSignal) {
+  const base='/queries/'+queryId+'/days/'+date+'/cells?'+gridParams+'&limit=5000'
+  const rows:CellRow[]=[]
+  let cursor:string|null=null
+  do{
+    const response=await historicalFetch(base+(cursor?'&cursor='+encodeURIComponent(cursor):''),{signal})
+    const result:{cells:CellRow[];next_cursor:string|null}=await response.json()
+    rows.push(...result.cells)
+    cursor=result.next_cursor
+  }while(cursor&&rows.length<20000)
+  return {rows,complete:cursor===null}
+}
+
+export function useHistoricalMap(enabled:boolean,queryId:string|undefined,key:string,mapFrom:string,mapTo:string) {
+  const cellCache=useRef({queryId:'',days:new Map<string,MapDay>()})
+  const [map,setMap]=useState<{key:string;days:MapDay[]}>()
+  const [error,setError]=useState<{key:string;message:string}>()
+  const mapKey=key+'\n'+mapFrom+'\n'+mapTo
+  const visible=enabled&&map?.key===mapKey?map:undefined
   useEffect(()=>{
-    if(!enabled||!queryId)return
+    if(!enabled||!queryId||visible)return
     const controller=new AbortController()
     const signal=controller.signal
-    async function fetchCells(day:string) {
-      const base='/queries/'+queryId+'/days/'+day+'/cells?'+gridParams+'&limit=5000'
-      const rows:CellRow[]=[]
-      let cursor:string|null=null
-      do{
-        const response=await historicalFetch(base+(cursor?'&cursor='+encodeURIComponent(cursor):''),{signal})
-        const result:{cells:CellRow[];next_cursor:string|null}=await response.json()
-        rows.push(...result.cells)
-        cursor=result.next_cursor
-      }while(cursor&&rows.length<20000)
-      return {rows,complete:cursor===null}
-    }
     if(cellCache.current.queryId!==queryId)cellCache.current={queryId,days:new Map()}
     const cached=cellCache.current.days
-    async function fetchDay(day:string):Promise<MapDay> {
+    const fetchDay=async(day:string):Promise<MapDay>=>{
       const previous=cached.get(day)
       if(previous)return previous
-      const result=await fetchCells(day)
+      const result=await loadHistoricalCells(queryId,day,signal)
       const entry={date:day,...result}
       if(!signal.aborted){
         cached.set(day,entry)
@@ -161,16 +169,18 @@ export function useHistorical(enabled:boolean, request:string, date:string, mapF
       for(let start=0;start<dates.length&&!signal.aborted;start+=2){
         days.push(...await Promise.all(dates.slice(start,start+2).map(fetchDay)))
       }
-      if(!signal.aborted)setMap({key:mapKey,days})
+      if(!signal.aborted){
+        setMap({key:mapKey,days})
+        setError(undefined)
+      }
     }
     void run().catch(problem=>{
-      if(!signal.aborted)setError({key:mapKey,message:String(problem.message)})
+      if(!signal.aborted)setError({key:mapKey,message:problem instanceof Error?problem.message:'Historical map data unavailable'})
     })
     return ()=>controller.abort()
-  },[enabled,queryId,mapFrom,mapTo,mapKey])
-  return {selection, days:current?.days, day:current?.days.find(row=>row.date===date)??(activeDay?.key===dayKey?activeDay.value:undefined),
-    mapDays:visible?.days, complete:visible?.days.every(day=>day.complete),
-    error:error?.key===key||error?.key===mapKey||error?.key===dayKey?error.message:null, retry:()=>retry(value=>value+1)}
+  },[enabled,queryId,mapFrom,mapTo,mapKey,visible])
+  return {mapDays:visible?.days,complete:visible?.days.every(day=>day.complete),
+    error:enabled&&error?.key===mapKey?error.message:null}
 }
 
 export const snppArchiveStart='2012-01-20'
