@@ -747,7 +747,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 .workbench>.filters { overflow:auto }
 .workbench>[hidden] { display:none }
 .mission-workspace .map-stage { grid-area:1 / 2; margin-bottom:var(--calendar-overlap) }
-.panel-toggle.button { position:absolute; top:19px; z-index:4; width:34px; height:36px; color:#c1cddd; background:#151e2a; border:1px solid #455267 }
+.panel-toggle.button { position:absolute; top:19px; z-index:4; width:23px; height:58px; padding:0; color:#c1cddd; background:#151e2a; border:1px solid #455267 }
 .panel-toggle[aria-expanded=true] { color:#ffad83 }
 .panel-toggle-left.button { left:var(--left-panel); border-radius:0 5px 5px 0 }
 .panel-toggle-right.button { right:var(--right-panel); border-radius:5px 0 0 5px }
