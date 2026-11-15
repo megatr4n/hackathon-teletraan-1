@@ -5,7 +5,7 @@ import type { FeatureCollection, Geometry } from 'geojson'
 import { calibration } from './calibration'
 import { areaPolygon, cellPolygon, contains, coord, distance, offset, type Aoi, type MapCell, type Coord, type Focus } from './data'
 import { FirePillars } from './pillars'
-import { Button } from './ui'
+import { Button, InfoTip, frpHelp } from './ui'
 import { asset, type AreaMode, type RegionCollection, type RegionFeature } from './geography'
 import { initialSnapshot, type Camera, type MapOptions } from './pins'
 
@@ -470,23 +470,23 @@ export function MapStage({focus,date,cells,harmonized,aoi,tool,onArea,onCirclePr
       </svg></div>}
     {tool && <div className="draw-hint"><Target size={14}/>{tool==='circle'?'Drag from the center to set the radius':'Drag to outline your area'}</div>}
     <div className="map-legend">
-      <div className="legend-title"><Layers3 size={13}/> FIRE RADIATIVE POWER</div>
+      <div className="legend-title"><Layers3 size={13}/> FIRE RADIATIVE POWER <InfoTip label="Fire radiative power" help={frpHelp}/></div>
       <div className="thermal-ramp" />
       <div className="legend-scale"><span>0</span><span>50</span><span>100</span><span>150+ MW</span></div>
       <div className="legend-z"><span/><b>Z ≥ 1.5</b><span/><b>Z ≥ 2.5</b></div>
     </div>
     <div className="map-controls">
-      <Button className="compass" aria-label="Reset bearing to true north" title="Reset bearing to true north" onClick={()=>changeCamera({bearing:0},450)}>
+      <Button className="compass" aria-label="Reset bearing to true north" help="Rotate the map so true north points up." onClick={()=>changeCamera({bearing:0},450)}>
         <span className="compass-face" style={{transform:'rotate('+(-camera.bearing)+'deg)'}}><b>N</b><i/><em/></span>
       </Button>
       <div className="map-control-group">
-        <Button title="Toggle 2D / 3D" aria-label="Toggle 2D / 3D" aria-pressed={camera.pitch>1} onClick={()=>changeCamera({pitch:camera.pitch>1?0:50},550)}><Box size={14}/>{camera.pitch>1?'3D':'2D'}</Button>
-        <Button title="Switch Map / Sat" aria-label="Switch Map / Sat" aria-pressed={options.satellite} onClick={()=>onOptions({...options,satellite:!options.satellite})}>{options.satellite?<Satellite size={16}/>:<MapIcon size={16}/>}</Button>
-        <Button title="Toggle 3×3 km grid" aria-label="Toggle 3×3 km grid" aria-pressed={options.grid} onClick={()=>onOptions({...options,grid:!options.grid})}><Grid3X3 size={16}/></Button>
+        <Button help="Switch between an overhead view and a tilted view." aria-label="Toggle 2D / 3D" aria-pressed={camera.pitch>1} onClick={()=>changeCamera({pitch:camera.pitch>1?0:50},550)}><Box size={14}/>{camera.pitch>1?'3D':'2D'}</Button>
+        <Button help="Switch between the basemap and satellite imagery." aria-label="Switch Map / Sat" aria-pressed={options.satellite} onClick={()=>onOptions({...options,satellite:!options.satellite})}>{options.satellite?<Satellite size={16}/>:<MapIcon size={16}/>}</Button>
+        <Button help="Show or hide the grid used to aggregate nearby fire detections." aria-label="Toggle 3×3 km grid" aria-pressed={options.grid} onClick={()=>onOptions({...options,grid:!options.grid})}><Grid3X3 size={16}/></Button>
       </div>
       <div className="map-control-group">
-        <Button title="Zoom in" aria-label="Zoom in" onClick={()=>changeCamera({zoom:Math.min(17,camera.zoom+1)},280)}><Plus size={17}/></Button>
-        <Button title="Zoom out" aria-label="Zoom out" onClick={()=>changeCamera({zoom:Math.max(1,camera.zoom-1)},280)}><Minus size={17}/></Button>
+        <Button help="See a smaller area in greater detail." aria-label="Zoom in" onClick={()=>changeCamera({zoom:Math.min(17,camera.zoom+1)},280)}><Plus size={17}/></Button>
+        <Button help="See a larger area." aria-label="Zoom out" onClick={()=>changeCamera({zoom:Math.max(1,camera.zoom-1)},280)}><Minus size={17}/></Button>
       </div>
     </div>
     <div className="camera-bar">

@@ -767,3 +767,14 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 @media(max-width:560px) {
   .mission-workspace .workbench { height:420px }
 }
+
+.button.info-tip { flex:none; width:20px; height:20px; min-height:0; padding:0; border:0; background:transparent; color:#aabaca }
+.button.info-tip:is(:hover,:focus-visible) { color:#ffad83; background:#293341 }
+.legend-title .info-tip { pointer-events:auto }
+.inline-info-icon { color:#aabaca }
+.help-tooltip { position:fixed; z-index:100; width:min(240px,calc(100vw - 16px)); padding:8px 10px; pointer-events:none;
+  border:1px solid #455267; border-radius:5px; background:#151e2a; color:#e5eaf0; box-shadow:0 5px 16px #0008;
+  font:12px/1.4 "Inter Variable",Inter,sans-serif; text-transform:none; letter-spacing:normal }
+@media(max-width:560px) {
+  .header-tools .tool-button .inline-info-icon { display:none }
+}

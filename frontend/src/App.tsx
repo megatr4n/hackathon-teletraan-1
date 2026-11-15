@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
-import { Activity, ArrowDown, ArrowDownToLine, ArrowUpRight, Bookmark, BookmarkPlus, Camera as CameraIcon, Circle, ChevronLeft, ChevronRight, Clock3, CodeXml, Crosshair, Database, FileText, Focus as FocusIcon, Grid2X2, Layers3, Lasso, Leaf, MapPin, Puzzle as PuzzleIcon, Ruler, Search, SlidersHorizontal, Satellite, TriangleAlert, X, Zap } from 'lucide-react'
+import { Activity, ArrowDown, ArrowDownToLine, ArrowUpRight, Bookmark, BookmarkPlus, Camera as CameraIcon, Circle, ChevronLeft, ChevronRight, Clock3, CodeXml, Crosshair, Database, FileText, Focus as FocusIcon, Grid2X2, Info, Layers3, Lasso, Leaf, MapPin, Puzzle as PuzzleIcon, Ruler, Search, SlidersHorizontal, Satellite, TriangleAlert, X, Zap } from 'lucide-react'
 import { areaPolygon, cellPolygon, clampDate, DAY, doy, firstDate, iso, maxCircleRadius, number, prettyDate, territories, type Aoi, type Cell, type Coord } from './data'
 import { calibration, calibrationAccuracy } from './calibration'
 import { cellObservations, dailyEstimates, dailyStats, dateIndex, periodStats, viirsStart } from './estimates'
@@ -9,7 +9,7 @@ import { countryOptions, emptyRegions, focusForRegion, geography, type AreaMode,
 import { MapStage, type Tool } from './MapStage'
 import { initialSnapshot, readPins, writePins, type Camera, type Pin, type Snapshot } from './pins'
 import { Timeline } from './Timeline'
-import { Button, Segmented } from './ui'
+import { Button, InfoTip, Segmented, frpHelp, hotspotHelp, zScoreHelp } from './ui'
 import { PuzzleDropdown } from './PuzzlePanels'
 import { puzzleFocus, type Puzzle } from './dailyPuzzle'
 import { useDailyPuzzle } from './useDailyPuzzle'
@@ -438,7 +438,7 @@ export function App() {
       <div className="panel-header"><span className="section-icon"><SlidersHorizontal size={16}/></span><h2>Query filters</h2></div>
       <div className="query-filter-sections">
         <section className="filter-section">
-          <h3><FocusIcon size={14}/>Area of interest</h3>
+          <h3><FocusIcon size={14}/>Area of interest <InfoTip label="Area of interest" help="Choose the country, administrative region, ecoregion, or custom area used to filter observations."/></h3>
           <Segmented label="Area of interest" value={areaMode} onChange={changeAreaMode} className="area-mode"
             items={[{value:'countries',label:'Countries'},{value:'ecoregions',label:'Eco-regions'},{value:'custom',label:'Custom Area'}]}/>
           <RegionSearch key={areaMode} query={query} mode={areaMode} options={displayOptions} onQuery={value=>setSettings(current=>({...current,query:value}))} onChoose={chooseRegion}/>
@@ -469,6 +469,7 @@ export function App() {
           </div>}
         </section>
         <section className="filter-section orbital-filters">
+          <h3>Orbital pass <InfoTip label="Orbital pass" help="Filter detections by whether the satellite observed the area during a daytime or nighttime pass."/></h3>
           <Segmented label="Orbital pass" value={pass} onChange={value=>setSettings(current=>({...current,pass:value}))}
             items={[{value:'all',label:'All Passes'},{value:'day',label:'Day'},{value:'night',label:'Night'}]}/>
           <div className="pass-coefficients mono">
@@ -499,7 +500,7 @@ export function App() {
             title="Daily Puzzle" onClick={game.toggle}><PuzzleIcon size={15}/><span>Daily Puzzle</span></Button>}/>
           <Button className="tool-button ecosystem-button" title="Peatlands & Protected Areas Overlay" aria-label="Peatlands & Protected Areas Overlay" aria-pressed={options.ecosystems}
             onClick={()=>setSettings(current=>({...current,options:{...current.options,ecosystems:!current.options.ecosystems}}))}><Leaf size={15}/><span>Peatlands &amp; Protected Areas</span></Button>
-          <Button className="tool-button" title="Ruler" aria-label="Ruler" aria-pressed={measuring} onClick={()=>{setTool(null);setMeasuring(value=>!value)}}><Ruler size={15}/><span>Ruler</span></Button>
+          <Button className="tool-button" help="Activate the ruler, then drag between two points on the map to measure the distance." aria-label="Ruler" aria-pressed={measuring} onClick={()=>{setTool(null);setMeasuring(value=>!value)}}><Ruler size={15}/><span>Ruler</span><Info className="inline-info-icon" size={12}/></Button>
           </div>
         <div className="header-pins">
           <Button className="tool-button" title="Save pin" aria-label="Save pin" onClick={()=>{setPinMenu(false);setPinName('');setPinDialog(true)}}><BookmarkPlus size={15}/></Button>
@@ -557,7 +558,7 @@ export function App() {
           </p>}
           {historical&&actual.complete===false&&<p className="sensor-note">Map display limit reached. CSV and GeoJSON include the full available selection.</p>}
           <section className="analysis-card calibration">
-            <h4><Layers3 size={14}/> Scientific intercalibration</h4>
+            <h4><Layers3 size={14}/> Scientific intercalibration <InfoTip label="Hotspots" help={hotspotHelp}/><InfoTip label="FRP" help={frpHelp}/></h4>
             <div className="sensor-group">Selected day · {date}</div>
             <SensorRow label="Raw MODIS hotspots" value={display(daily.rawCount)} active={!harmonized}/>
             <SensorRow label="Harmonized MODIS hotspots" value={display(daily.correctedCount)} active={harmonized}/>
@@ -589,7 +590,7 @@ export function App() {
               unit={historical?(observedPeriod.peak?display(observedPeriod.peak.values.corrected)+' MW':undefined):period.peak?fmt(period.peak)+' MW':undefined}/>
           </section>
           <section className="analysis-card historical">
-            <h4><Clock3 size={14}/> Historical context</h4>
+            <h4><Clock3 size={14}/> Historical context <InfoTip label="Z-score" help={zScoreHelp}/></h4>
             {historical?<>
               <div className="historical-row"><span><strong className="mono">{display(context?.delta,signed)}</strong> vs historical median</span><small className="mono">{display(context?.median)} MW BASELINE</small></div>
               <div className="historical-row"><span><strong className="mono">{display(context?.rank,value=>'#'+fmt(value))}</strong> FRP rank <small className="inline-meta">/ observed days</small></span><small className="mono">{context?context.percentile.toFixed(1)+'TH PERCENTILE':'—'}</small></div>
@@ -601,8 +602,8 @@ export function App() {
             </>}
           </section>
           <div className="kpis">
-            <section><span><Grid2X2 size={13}/> Active fire cells</span><strong className="mono">{historical&&!actual.rows?'—':units(cells.length,'cells')}</strong></section>
-            <section title={historical?'Requires time integration of FRP':undefined}><span><Zap size={13}/> Radiative energy</span><strong className="mono">{historical?'—':units(estimates.fre,'TJ')}</strong></section>
+            <section><span><Grid2X2 size={13}/> Active fire cells <InfoTip label="Active fire cells" help="Number of map grid cells containing fire detections for the selected day and filters."/></span><strong className="mono">{historical&&!actual.rows?'—':units(cells.length,'cells')}</strong></section>
+            <section title={historical?'Requires time integration of FRP':undefined}><span><Zap size={13}/> Radiative energy <InfoTip label="Radiative energy" help="Fire radiative energy is the total energy radiated over time. It is estimated by integrating FRP."/></span><strong className="mono">{historical?'—':units(estimates.fre,'TJ')}</strong></section>
             <section className="wide-kpi" title={historical?'Requires a validated area estimate':'FRP ÷ [0.95 × σ × (800⁴ − 300⁴)], expressed in km²'}><span><FocusIcon size={13}/> Estimated fire area</span><strong className="mono">{historical?'—':units(estimates.area,'km²')}</strong></section>
             <section className="wide-kpi" title={historical?'Requires time integration and an emissions model':'FRE × 0.368 kg dry matter/MJ × 1.626 kg CO₂/kg dry matter'}><span><Leaf size={13}/> Estimated CO₂ emissions</span><strong className="mono">{historical?'—':units(estimates.co2,'t')}</strong></section>
           </div>

@@ -2,7 +2,7 @@ import { CalendarDays, ChartNoAxesCombined, ChevronDown, Grid3X3, Pause, Play, S
 import { DAY, doy, firstDate, iso, lastDate, prettyDate, years, clampDate } from './data'
 import { archiveDates } from './observations'
 import { dateIndex, type DailyStats } from './estimates'
-import { Button, Segmented } from './ui'
+import { Button, InfoTip, Segmented, frpHelp, hotspotHelp, zScoreHelp } from './ui'
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import type { CalendarView, Metric } from './pins'
 
@@ -10,7 +10,8 @@ const months=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV',
 const palette=['#1b2630','#29353d','#443338','#663a35','#954832','#c86638','#ef8f4b','#ffc575']
 const observedPalette=['#1b2630','#705047','#875443','#a05e47','#b96c44','#d2804c','#ef9a57','#ffc575']
 const belowBaselinePalette=['#1b2630','#355268','#3d6581','#467b9c','#4e94b6','#60a9cc','#7abfe1','#a7d9f3']
-const metricLabels = {frp:'FRP Energy',count:'Hotspot Count',z:'Z-Score'}
+const metricHelp={frp:frpHelp,count:hotspotHelp,z:zScoreHelp}
+const metricLabels = {frp:'FRP',count:'Hotspot Count',z:'Z-Score'}
 type HistoricalDay = { value:number|null; source:string; details?:string }
 const yearDays=years.map(year=>{
   const start=dateIndex(year+'-01-01',firstDate)
@@ -169,6 +170,7 @@ export function Timeline({date,from,to,playing,onPlay,onSelect,series,historical
       </div>
       <div className="timeline-view">
         <MetricPicker metric={metric} onMetric={onMetric}/>
+        <InfoTip label={metricLabels[metric]} help={metricHelp[metric]}/>
         <Segmented label="Calendar view" value={view} onChange={onView} items={[{value:'grid',label:<><Grid3X3 size={13}/> Grid Matrix</>},{value:'ridge',label:<><ChartNoAxesCombined size={14}/> Ridge Waves</>}]}/>
       </div>
     </div>
