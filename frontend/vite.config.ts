@@ -20,6 +20,9 @@ export default defineConfig({
   server: {
     port: 5173,
     host: true,
+    proxy: {
+      '/api/v2': {target: process.env.VITE_FIRMS_API || 'http://127.0.0.1:8000', changeOrigin:true},
+    },
     fs: {
       allow: [searchForWorkspaceRoot(process.cwd()), fileURLToPath(new URL('../config', import.meta.url))],
     },
