@@ -1,8 +1,10 @@
 """Version 2 API for exact queries over canonical FIRMS observations."""
 
 
+import duckdb
 import hashlib
 import json
+import logging
 from app.services import historical_data as data
 from collections import OrderedDict
 from dataclasses import dataclass
@@ -18,6 +20,9 @@ from typing import Literal
 
 
 router = APIRouter(prefix="/api/v2", tags=["FIRMS historical"])
+
+
+log = logging.getLogger(__name__)
 
 
 Platform = Literal["terra", "aqua", "snpp"]
@@ -89,6 +94,28 @@ class Provenance(BaseModel):
     expires_at: datetime
 
 
+class Counts(BaseModel):
+    detection_count: int | None
+    valid_frp_count: int
+    missing_frp_count: int
+    frp_sum_mw: float | None
+
+
+class PlatformDay(Counts):
+    platform: Platform
+    coverage_status: Literal["observed_records", "unknown_coverage", "outside_observed_range"]
+    by_pass: dict[Literal["day", "night", "unknown"], Counts]
+
+
+class DailyObservation(BaseModel):
+    date: date
+    platforms: list[PlatformDay]
+
+
+class DayResponse(Provenance, DailyObservation):
+    platforms: list[PlatformDay]
+
+
 @dataclass(eq=False)
 class Selection:
     request: SelectionRequest
@@ -125,6 +152,16 @@ def get_release():
         return data.active_release()
     except data.DatasetUnavailable as error:
         raise failure(503, "dataset_unavailable", str(error)) from error
+
+
+def read_data(operation, *args):
+    try:
+        return operation(*args)
+    except data.DatasetUnavailable as error:
+        raise failure(503, "dataset_unavailable", str(error)) from error
+    except duckdb.Error as error:
+        log.exception("Historical query could not read the verified release")
+        raise failure(503, "query_failed", "The historical query could not be completed") from error
 
 
 @router.get("/datasets/active")
@@ -209,3 +246,62 @@ def create_query(request: SelectionRequest):
         while len(selections) > 128:
             selections.popitem(last=False)
     return selection.metadata()
+
+
+def get_selection(query_id, day=None):
+    with selection_lock:
+        selection = selections.get(query_id)
+    if selection is None:
+        raise failure(404, "unknown_query", "Create the selection again")
+    if selection.expires <= datetime.now(UTC):
+        raise failure(410, "expired_query", "Create the selection again")
+    if day and not selection.request.start <= day <= selection.request.end:
+        raise failure(422, "date_out_of_bounds", "The day is outside the query interval")
+    return selection
+
+
+def metrics(detections=0, valid=0, missing=0, frp=None):
+    return {
+        "detection_count": detections, "valid_frp_count": valid,
+        "missing_frp_count": missing, "frp_sum_mw": frp,
+    }
+
+
+def scan_daily(selection, start, end):
+    # Release the DuckDB scan lock between blocks so day and map requests can run.
+    while start <= end:
+        block_end = min(end, date(min(start.year + 2, 9999), 12, 31))
+        yield from read_data(data.daily_records, selection.release, selection, start, block_end)
+        if block_end == end:
+            break
+        start = block_end + timedelta(days=1)
+
+
+def range_rows(selection, start, end):
+    request = selection.request
+    groups = {}
+    for day, platform, orbit_pass, *values in scan_daily(selection, start, end):
+        groups.setdefault((day, platform), {})[orbit_pass] = metrics(*values)
+    rows = {}
+    for day in data.date_rows(start, end):
+        entries = []
+        for platform in request.platforms:
+            passes = groups.get((day, platform), {})
+            status = data.coverage(platform, day, bool(passes))
+            recorded = list(passes.values())
+            frp = [value["frp_sum_mw"] for value in recorded if value["frp_sum_mw"] is not None]
+            totals = metrics(*(sum(row[field] for row in recorded) for field in
+                               ("detection_count", "valid_frp_count", "missing_frp_count")),
+                             sum(frp) if frp else None)
+            if not passes:
+                totals["detection_count"] = None
+            entries.append({"platform": platform, "coverage_status": status, "by_pass": passes, **totals})
+        rows[day] = {"date": day.isoformat(), "platforms": entries}
+    return rows
+
+
+@router.get("/queries/{query_id}/days/{day}", response_model=DayResponse)
+def day_stats(query_id: str, day: date):
+    selection = get_selection(query_id, day)
+    row = range_rows(selection, day, day)[day]
+    return {**selection.metadata(), **row}
