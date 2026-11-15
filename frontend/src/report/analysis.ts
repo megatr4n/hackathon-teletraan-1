@@ -71,6 +71,7 @@ export function validateReport(report:HistoricalReport,from:string,to:string,que
   if(report.source!=='firms'||!Array.isArray(report.series)||report.report_start!==from||report.report_end!==to)
     throw new Error('Report payload is incomplete or has a different period. Update the historical API and retry.')
   if(queryId&&report.query_id!==queryId)throw new Error('Report selection changed. Please retry.')
+  if(!Array.isArray(report.area_bounds)||report.area_bounds.length!==4||!report.area_bounds.every(finite))throw new Error('Report area bounds are missing. Update the historical API and retry.')
   if(!/^[a-f0-9]{64}$/.test(report.dataset_manifest_sha256))throw new Error('Missing dataset fingerprint.')
   const expected=Math.round((Date.parse(to)-Date.parse(from))/86400000)+1
   if(report.series.length!==expected)throw new Error('Report contains missing calendar days.')
@@ -102,6 +103,18 @@ export function validateReport(report:HistoricalReport,from:string,to:string,que
     }
     if(summary.requested_days!==days.length||summary.days_with_records!==days.filter(d=>d.detection_count!==null).length||
       summary.days_with_valid_metric!==days.filter(d=>d.frp_sum_mw!==null).length)throw new Error('Report observation denominators disagree.')
+    const average=mean(days.map(d=>d.frp_sum_mw))
+    if(average===null?summary.mean_observed_daily_frp_mw!==null:
+      !finite(summary.mean_observed_daily_frp_mw)||Math.abs(average-summary.mean_observed_daily_frp_mw)>Math.max(1e-6,Math.abs(average)*1e-9))
+      throw new Error('Report mean disagrees with observed-day values.')
+    const valid=days.map((d,i)=>({date:report.series[i].date,value:d.frp_sum_mw})).filter(d=>d.value!==null)
+    if(!valid.length){if(summary.peak_frp!==null)throw new Error('Unexpected FRP peak without observations.')}
+    else{
+      const peak=Math.max(...valid.map(d=>d.value!))
+      if(!summary.peak_frp||!finite(summary.peak_frp.frp_sum_mw)||Math.abs(peak-summary.peak_frp.frp_sum_mw)>Math.max(1e-6,Math.abs(peak)*1e-9)||
+        !valid.some(d=>d.date===summary.peak_frp?.date&&Math.abs(d.value!-peak)<=Math.max(1e-6,Math.abs(peak)*1e-9)))
+        throw new Error('Report FRP peak disagrees with daily observations.')
+    }
   }
 }
 export function reportEvidence(report:HistoricalReport,generatedAt:string) {

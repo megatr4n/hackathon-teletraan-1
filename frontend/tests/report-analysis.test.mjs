@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import {createServer} from 'vite'
+import {readFile} from 'node:fs/promises'
 const vite=await createServer({configFile:false,server:{middlewareMode:true,hmr:false,ws:false},optimizeDeps:{noDiscovery:true,include:[]},appType:'custom'})
 try{
   const {dailySeries,countBins,pairedCounts,validateReport,reportEvidence}=await vite.ssrLoadModule('/src/report/analysis.ts')
@@ -10,7 +11,7 @@ try{
       z_score:null,z_score_status:'insufficient_reference_years',z_score_reference_days:0,z_score_reference_years:0,
       platforms:['terra','aqua','snpp'].map(platform=>({platform,coverage_status:'unknown_coverage',by_pass:{},...empty}))}))
     const report={source:'firms',query_id:'q_fixture',dataset_manifest_sha256:'a'.repeat(64),pass:'all',
-      report_start:start,report_end:series.at(-1).date,platforms:['terra','aqua','snpp'],series,day:series[0],period:[]}
+      area_bounds:[0,0,1,1],report_start:start,report_end:series.at(-1).date,platforms:['terra','aqua','snpp'],series,day:series[0],period:[]}
     return report
   }
   function record(report,index,platform,count,frp=count){
@@ -23,6 +24,8 @@ try{
       return {platform,requested_days:days.length,days_with_records:counts.length,days_with_valid_metric:valid.length,
         detection_count:counts.length?counts.reduce((n,d)=>n+d.detection_count,0):null,
         frp_sum_mw:valid.length?valid.reduce((n,d)=>n+d.frp_sum_mw,0):null,
+        mean_observed_daily_frp_mw:valid.length?valid.reduce((n,d)=>n+d.frp_sum_mw,0)/valid.length:null,
+        peak_frp:valid.length?{date:r.series.find(d=>d.platforms.find(p=>p.platform===platform).frp_sum_mw===Math.max(...valid.map(d=>d.frp_sum_mw))).date,frp_sum_mw:Math.max(...valid.map(d=>d.frp_sum_mw))}:null,
         valid_frp_count:days.reduce((n,d)=>n+d.valid_frp_count,0),missing_frp_count:days.reduce((n,d)=>n+d.missing_frp_count,0)}
     }); return r
   }
@@ -41,6 +44,10 @@ try{
   assert.equal(pairedCounts([]).raw.wape,null)
   assert.equal(pairedCounts([{date:'2020-01-01',raw:1,adjusted:2,viirs:0}]).raw.wape,null)
   validateReport(r,r.report_start,r.report_end,r.query_id)
+  const wrongMean=structuredClone(r);wrongMean.period[0].mean_observed_daily_frp_mw=999
+  assert.throws(()=>validateReport(wrongMean,r.report_start,r.report_end),/mean disagrees/)
+  const wrongPeak=structuredClone(r);wrongPeak.period[0].peak_frp.date='2000-01-01'
+  assert.throws(()=>validateReport(wrongPeak,r.report_start,r.report_end),/peak disagrees/)
   const bad=structuredClone(r);bad.period[0].detection_count++
   assert.throws(()=>validateReport(bad,bad.report_start,bad.report_end),/reconcile/)
   assert.throws(()=>validateReport({...r,series:r.series.slice(1)},r.report_start,r.report_end),/missing calendar/)
@@ -57,5 +64,12 @@ try{
   const evidence=reportEvidence(monthly,'2026-11-15T00:00:00Z')
   assert.equal(evidence.derivations.counts.length,123)
   assert.equal(evidence.derivations.count_chart.rows[0].adjusted,4*calibration.hotspots.all)
+  const {buildHistoricalPdf}=await vite.ssrLoadModule('/src/report/historicalPdf.ts')
+  const font=(await readFile('src/report/NotoSans-Regular.ttf')).toString('base64')
+  const empty=summarize(fixture('2011-01-01',1))
+  Object.assign(empty,{dataset_release:'TEST FIXTURE',method_id:'test',quality_policy:'canonical',spatial_mode:'exact',geometry_version:'test',area:{kind:'preset',id:'test'}})
+  const pdf=buildHistoricalPdf(empty,'Synthetic empty fixture - test only',font,'2026-11-15T00:00:00Z')
+  assert.equal(pdf.getNumberOfPages(),9)
+  assert.ok(pdf.output('arraybuffer').byteLength>1000)
   console.log('Report checks passed: transition, no fallback, pass coefficients, gaps, invalid FRP, paired days, denominators, partial months and reconciliation.')
 }finally{await vite.close()}

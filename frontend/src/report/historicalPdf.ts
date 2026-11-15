@@ -67,7 +67,7 @@ export function buildHistoricalPdf(report:HistoricalReport,areaLabel:string,font
       pdf.setFontSize(7).setTextColor(muted).text(short(v),left-3,py+1,{align:'right'})
     }
     if(opts.signed&&min<0){pdf.setDrawColor(gray).line(left,yy(0),right,yy(0))}
-    const ticks=end===begin?[0]:[0,.25,.5,.75,1]
+    const ticks=end===begin?[.5]:[0,.25,.5,.75,1]
     ticks.forEach(t=>{
       const d=new Date(begin+(end-begin)*t).toISOString().slice(0,10)
       pdf.setFontSize(6.7).setTextColor(muted).text(d,left+t*(right-left),bottom+5,{align:'center'})
