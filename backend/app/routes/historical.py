@@ -12,7 +12,7 @@ import re
 import shapely
 from app.services import climatology
 from app.services import historical_data as data
-from collections import OrderedDict
+from app.services import historical_queries as queries
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from datetime import timedelta
@@ -24,7 +24,6 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from shapely.affinity import translate
 from shapely.errors import GEOSException
 from shapely.geometry import mapping
-from threading import Lock
 from typing import Annotated
 from typing import Literal
 
@@ -219,12 +218,6 @@ class Selection:
         }
 
 
-selections: OrderedDict[str, Selection] = OrderedDict()
-
-
-selection_lock = Lock()
-
-
 def failure(status, code, message):
     return HTTPException(status, {"code": code, "message": message})
 
@@ -311,41 +304,51 @@ def presets():
     return {"items": data.presets(), "geometry_version": data.GEO_VERSION}
 
 
-@router.post("/queries", response_model=Provenance)
-def create_query(request: SelectionRequest):
-    release = get_release()
-    if request.dataset_release and request.dataset_release != release.id:
-        raise failure(404, "unknown_release", "The requested release is unavailable")
-    request.dataset_release = release.id
-    serialized = json.dumps(request.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
-    key = "q_" + hashlib.sha256((release.digest + data.GEO_VERSION + serialized).encode()).hexdigest()[:32]
-    now = datetime.now(UTC)
-    with selection_lock:
-        existing = selections.get(key)
-        if existing and existing.expires > now:
-            return existing.metadata()
+@lru_cache(maxsize=128)
+def selection_geometry(serialized):
+    request = SelectionRequest.model_validate_json(serialized)
     try:
         polygon, bounds = data.geometry_for(request.area)
     except LookupError as error:
         raise failure(404, "unknown_territory", str(error)) from error
     except (ValueError, TypeError, KeyError, IndexError, GEOSException) as error:
         raise failure(422, "invalid_geometry", str(error)) from error
-    selection = Selection(request, release, polygon, bounds, now + TTL, key)
-    with selection_lock:
-        selections[key] = selection
-        selections.move_to_end(key)
-        while len(selections) > 128:
-            selections.popitem(last=False)
-    return selection.metadata()
+    return request, polygon, bounds
+
+
+@lru_cache(maxsize=128)
+def restore_selection(query_id, release, expires, serialized):
+    request, polygon, bounds = selection_geometry(serialized)
+    return Selection(request, release, polygon, bounds, expires, query_id)
+
+
+@router.post("/queries", response_model=Provenance)
+def create_query(request: SelectionRequest):
+    release = get_release()
+    if request.dataset_release and request.dataset_release != release.id:
+        raise failure(404, "unknown_release", "The requested release is unavailable")
+    request.dataset_release = release.id
+    serialized = json.dumps(request.model_dump(mode="json", by_alias=True), sort_keys=True, separators=(",", ":"))
+    # Preserve the query identifiers generated with the internal field names.
+    identity = json.dumps(request.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
+    key = "q_" + hashlib.sha256((release.digest + data.GEO_VERSION + identity).encode()).hexdigest()[:32]
+    selection_geometry(serialized)
+    now = datetime.now(UTC)
+    expires = read_data(queries.save, key, serialized, release.digest, data.GEO_VERSION, now, TTL)
+    return restore_selection(key, release, expires, serialized).metadata()
 
 
 def get_selection(query_id, day=None):
-    with selection_lock:
-        selection = selections.get(query_id)
-    if selection is None:
+    stored = read_data(queries.load, query_id)
+    if stored is None:
         raise failure(404, "unknown_query", "Create the selection again")
-    if selection.expires <= datetime.now(UTC):
+    serialized, digest, geometry_version, expires = stored
+    if expires <= datetime.now(UTC):
         raise failure(410, "expired_query", "Create the selection again")
+    release = get_release()
+    if digest != release.digest or geometry_version != data.GEO_VERSION:
+        raise failure(410, "expired_query", "The data or geometry changed; create the selection again")
+    selection = restore_selection(query_id, release, expires, serialized)
     if day and not selection.request.start <= day <= selection.request.end:
         raise failure(422, "date_out_of_bounds", "The day is outside the query interval")
     return selection
