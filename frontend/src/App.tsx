@@ -490,7 +490,7 @@ export function App() {
         <section className="filter-section calibration-controls">
           <h3><Layers3 size={14}/>Intercalibration</h3>
           <Segmented label="Intercalibration mode" value={harmonized?'harmonized':'raw'} onChange={value=>setSettings(current=>({...current,harmonized:value==='harmonized'}))}
-            items={[{value:'raw',label:<><Database size={13}/> Raw Satellite</>},{value:'harmonized',label:<>Harmonized <span className="algorithm-tag mono">E19</span></>}]}/>
+            items={[{value:'raw',label:<><Database size={13}/> Raw Satellite</>},{value:'harmonized',label:'Harmonized'}]}/>
         </section>
       </div>
     </>
