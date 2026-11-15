@@ -257,7 +257,7 @@ def dataset():
         "quality_policies": ["canonical"], "spatial_modes": ["exact"],
         "capabilities": {
             "acquisition_coverage": False, "calibration": False, "z_score": True,
-            "forecast": False, "cells": True, "csv": True, "geojson": False,
+            "forecast": False, "cells": True, "csv": True, "geojson": True,
         },
         "limits": {"max_days": MAX_DAYS, "query_ttl_seconds": TTL.total_seconds(), "h3_resolution": [2, 8]},
     }
@@ -541,7 +541,7 @@ def cells(query_id: str, day: date,
 
 
 @router.get("/queries/{query_id}/export")
-def export(query_id: str, date: date, format: Literal["csv"] = "csv",
+def export(query_id: str, date: date, format: Literal["csv", "geojson"] = "csv",
            level: Literal["cells"] = "cells", resolution: int = Query(6, ge=MIN_RESOLUTION, le=MAX_RESOLUTION),
            sensor: Sensor | None = None, square_km: Literal["3", "9", "24"] | None = Query(None)):
     selection = get_selection(query_id, date)
@@ -555,6 +555,16 @@ def export(query_id: str, date: date, format: Literal["csv"] = "csv",
                 "spatial_mode": selection.request.spatial_mode, "method_id": data.METHOD,
                 "grid": f"square_{square_km}km" if square_km else f"h3_{resolution}"}
     headers = {"Content-Disposition": f'attachment; filename="teletraan-{date}.{format}"'}
+    if format == "geojson":
+        def features():
+            yield '{"type":"FeatureCollection","metadata":' + json.dumps(metadata) + ',"features":['
+            for index, row in enumerate(cell_rows(records, date, size)):
+                if index:
+                    yield ","
+                yield json.dumps({"type": "Feature", "geometry": row.pop("geometry"), "properties": row})
+            yield "]}"
+        return StreamingResponse(features(), media_type="application/geo+json", headers=headers)
+
     def lines():
         buffer = io.StringIO()
         columns = ["cell_id", "date", "latitude", "longitude", "pass", "source_platform",
