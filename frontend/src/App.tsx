@@ -1,3 +1,4 @@
+import { rankQuietMonths } from './seasonalHotspots'
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
 import { Activity, ArrowDown, ArrowDownToLine, ArrowUpRight, Bookmark, BookmarkPlus, Camera as CameraIcon, Circle, Clock3, CodeXml, Crosshair, Database, FileText, Focus as FocusIcon, Grid2X2, Layers3, Lasso, Leaf, MapPin, Puzzle as PuzzleIcon, Ruler, Search, SlidersHorizontal, Satellite, TriangleAlert, X, Zap } from 'lucide-react'
@@ -217,6 +218,21 @@ export function App() {
       .reduce<string|undefined>((nearest,day)=>
         !nearest||Math.abs(Date.parse(day.date)-selected)<Math.abs(Date.parse(nearest)-selected)?day.date:nearest,undefined)
   },[actual.rows,date,from,historical,observedDays,to])
+  const quietMonths = useMemo(() => {
+    if (!historical) {
+      return rankQuietMonths(series.map((day, index) => ({
+        date: archiveDates[index], detections: day.rawCount,
+      })))
+    }
+    return rankQuietMonths((actual.days ?? []).map(day => {
+      const aqua = day.platforms.find(platform => platform.platform === 'aqua')
+      return {
+        date: day.date,
+        detections: aqua?.detection_count ?? null,
+        outsideRange: !aqua || aqua.coverage_status === 'outside_observed_range',
+      }
+    }))
+  }, [historical, actual.days, series])
   const historicalCalendar=useMemo(()=>{
     if(!historical)return undefined
     const byDate=new Map(observedDays.map(day=>[day.date,day.values]))
@@ -529,6 +545,26 @@ export function App() {
             <div className="analysis-date mono"><span>{prettyDate(date)} <b>· DOY {String(doy(date)).padStart(3,'0')}</b></span>
               <span className={'severity '+(historical?'normal':severity)}><span/>{historical?(daily.rawCount!==null||daily.viirsCount!==null?'OBSERVED':actual.day?'COVERAGE UNKNOWN':'LOADING'):severity==='critical'?'CRITICAL ANOMALY':severity==='elevated'?'ELEVATED':'NOMINAL'}</span></div>
           </div>
+          <section className="analysis-card seasonal-hotspots" aria-labelledby="quiet-months-title">
+            <h4 id="quiet-months-title">Lowest-activity months</h4>
+            <div className="seasonal-hotspots-body">
+              <p className="seasonal-source">{historical ? 'Aqua MODIS' : 'Synthetic preview'} · Full archive · {pass === 'all' ? 'All passes' : pass === 'day' ? 'Day passes' : 'Night passes'}</p>
+              {quietMonths.length > 0 ? <>
+                <ol className="seasonal-months">
+                  {quietMonths.slice(0, 3).map(month => (
+                    <li key={month.month}>
+                      <strong>{month.month}</strong>
+                      <span className="seasonal-rate mono">{month.rate.toPrecision(3)} / day</span>
+                      <small>{month.years}/{month.eligibleYears} years with records</small>
+                    </li>
+                  ))}
+                </ol>
+                <p className="seasonal-note">Mean recorded detections per calendar day. Months with no records are excluded. Historical activity cannot establish current travel safety.</p>
+              </> : <p className="seasonal-note" role="status">
+                {actual.error ? 'Seasonal data unavailable.' : actual.days ? 'No comparable months with records.' : 'Loading the historical archive…'}
+              </p>}
+            </div>
+          </section>
           {historical&&actual.error&&<p className="sensor-note" role="alert">{actual.error} <Button onClick={actual.retry}>Retry</Button></p>}
           {historical&&!actual.days&&!actual.error&&<p className="sensor-note" role="status">Loading the 2000–2025 archive…</p>}
           {historical&&actual.rows?.length===0&&actual.days&&<p className="sensor-note">No detections in this area on {date} for the selected pass.
