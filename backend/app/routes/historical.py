@@ -2,9 +2,11 @@
 
 
 import duckdb
+import h3
 import hashlib
 import json
 import logging
+import shapely
 from app.services import climatology
 from app.services import historical_data as data
 from collections import OrderedDict
@@ -15,7 +17,9 @@ from fastapi import APIRouter, HTTPException
 from fastapi import Query
 from functools import lru_cache
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from shapely.affinity import translate
 from shapely.errors import GEOSException
+from shapely.geometry import mapping
 from threading import Lock
 from typing import Annotated
 from typing import Literal
@@ -33,7 +37,16 @@ Platform = Literal["terra", "aqua", "snpp"]
 CatalogKind = Literal["country", "admin", "eco", "preset"]
 
 
+Sensor = Literal["modis", "viirs-snpp"]
+
+
 MAX_DAYS = 9500
+
+
+MIN_RESOLUTION = 2
+
+
+MAX_RESOLUTION = 8
 
 
 TTL = timedelta(hours=2)
@@ -155,6 +168,25 @@ class SummaryResponse(Provenance):
     platforms_summary: list[PlatformSummary]
 
 
+class CellObservation(Counts):
+    cell_id: str
+    date: date
+    platform: Platform
+    orbit_pass: Literal["day", "night", "unknown"] = Field(alias="pass")
+    center: tuple[float, float]
+    geometry: dict
+    coverage_status: Literal["observed_records"]
+
+
+class CellsResponse(Provenance):
+    date: date
+    resolution: int
+    sensor: Sensor | None
+    cells: list[CellObservation]
+    complete: bool
+    next_cursor: str | None
+
+
 class ReportResponse(Provenance):
     day: CalendarDay
     period: list[PlatformSummary]
@@ -220,9 +252,9 @@ def dataset():
         "quality_policies": ["canonical"], "spatial_modes": ["exact"],
         "capabilities": {
             "acquisition_coverage": False, "calibration": False, "z_score": True,
-            "forecast": False, "cells": False, "csv": False, "geojson": False,
+            "forecast": False, "cells": True, "csv": False, "geojson": False,
         },
-        "limits": {"max_days": MAX_DAYS, "query_ttl_seconds": TTL.total_seconds()},
+        "limits": {"max_days": MAX_DAYS, "query_ttl_seconds": TTL.total_seconds(), "h3_resolution": [2, 8]},
     }
 
 
@@ -234,6 +266,7 @@ def methodology():
         "frp_sum_mw": "Sum of finite positive FRP readings in MW; null when none have valid FRP.",
         "coverage": "A detection confirms records for its platform and day. Missing records imply unknown coverage.",
         "geometry": "Exact point inclusion relative to the supplied geometry; catalog boundaries are simplified.",
+        "cells": "H3 counts are by platform and pass. Cell boundaries can extend outside the selected area.",
         "climatology": {
             "method_id": climatology.METHOD_ID, "window_days_each_side": climatology.WINDOW_DAYS,
             "minimum_reference_years": climatology.MIN_REFERENCE_YEARS,
@@ -441,3 +474,53 @@ def report_data(query_id: str, date: date, start: date | None = None, end: date 
         raise failure(422, "invalid_report_period", "The report start must precede its end")
     return {**selection.metadata(), "day": annotate_day(date, calendar_rows(selection)[date], calendar_scores(selection)),
             "period": summarize(selection, start, end), "methodology": methodology()}
+
+
+def cell_shape(cell_id):
+    lat, lon = h3.cell_to_latlng(cell_id)
+    vertices = [(lon + ((x - lon + 180) % 360 - 180), y) for y, x in h3.cell_to_boundary(cell_id)]
+    polygon = shapely.Polygon(vertices)
+    if polygon.bounds[0] < -180:
+        polygon = translate(polygon, xoff=360)
+    if polygon.bounds[2] > 180:
+        west = polygon.intersection(shapely.box(-180, -90, 180, 90))
+        east = translate(polygon.intersection(shapely.box(180, -90, 360, 90)), xoff=-360)
+        polygon = shapely.MultiPolygon([piece for piece in (west, east) if piece.geom_type == "Polygon" and not piece.is_empty])
+    return [lon, lat], mapping(polygon)
+
+
+def cell_rows(records, day):
+    for cell_id, platform, orbit_pass, *values in records:
+        center, geometry = cell_shape(cell_id)
+        yield {"cell_id": cell_id, "date": day.isoformat(), "platform": platform, "pass": orbit_pass,
+               "center": center, "geometry": geometry, "coverage_status": "observed_records", **metrics(*values)}
+
+
+def cursor_for(selection, day, resolution, sensor, record):
+    return ":".join(map(str, [selection.identifier, day, resolution, sensor or "all", *record[:3]]))
+
+
+@router.get("/queries/{query_id}/days/{day}/cells", response_model=CellsResponse)
+def cells(query_id: str, day: date,
+          resolution: int = Query(6, ge=MIN_RESOLUTION, le=MAX_RESOLUTION),
+          cursor: str | None = Query(None, max_length=150), limit: int = Query(2000, ge=1, le=5000),
+          sensor: Sensor | None = None):
+    selection = get_selection(query_id, day)
+    after = ("", "", "")
+    if cursor:
+        parts = cursor.split(":")
+        if parts[:4] != [query_id, day.isoformat(), str(resolution), sensor or "all"] or len(parts) != 7:
+            raise failure(422, "invalid_cursor", "The cursor belongs to another cell selection")
+        cell_key = parts[4]
+        valid = h3.is_valid_cell(cell_key) and h3.get_resolution(cell_key) == resolution
+        if not valid:
+            raise failure(422, "invalid_cursor", "The cursor contains an invalid cell")
+        if parts[5] not in selection.request.platforms or parts[6] not in ("day", "night", "unknown"):
+            raise failure(422, "invalid_cursor", "The cursor contains an invalid platform or pass")
+        after = tuple(parts[4:])
+    records = read_data(data.cell_records, selection.release, selection, day, resolution, after, limit + 1,
+                        sensor)
+    more = len(records) > limit
+    return {**selection.metadata(), "date": day, "resolution": resolution, "sensor": sensor,
+            "cells": list(cell_rows(records[:limit], day)), "complete": not more,
+            "next_cursor": cursor_for(selection, day, resolution, sensor, records[limit - 1]) if more else None}
