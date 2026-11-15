@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { MultiPolygon, Polygon } from 'geojson'
 import { areaPolygon, firstDate, lastDate, type MapCell, type Coord, type Pass } from './data'
-import { calibration } from './calibration'
+import { calibration, periodFrpMinimumDays } from './calibration'
 import type { Metric, Snapshot } from './pins'
 
 const configuredApi = import.meta.env.VITE_FIRMS_API
@@ -208,4 +208,19 @@ export function scoreDetails(day:Day|undefined) {
   if(day.z_score_status==='insufficient_reference_years')return `Only ${day.z_score_reference_years} reference years (minimum 8)`
   if(day.z_score_status==='zero_reference_variance')return 'No variation in reference FRP'
   return `${day.z_score_reference_days} reference days in ${day.z_score_reference_years} other years`
+}
+
+const metricFields=['raw','rawCount','corrected','correctedCount','viirs','viirsCount'] as const
+
+export function actualPeriod(rows:{date:string; values:ActualDay}[], days:number, pass:Pass) {
+  const usePeriodCoefficient=days>=periodFrpMinimumDays
+  const periods=rows.map(row=>{
+    const {raw}=row.values
+    return {...row,values:{...row.values,corrected:usePeriodCoefficient&&raw!==null?raw*calibration.periodFrp[pass]:row.values.corrected}}
+  })
+  const totals=Object.fromEntries(metricFields.map(field=>[field,nullableSum(periods.map(row=>row.values[field]))])) as ActualDay
+  const denominators=Object.fromEntries(metricFields.map(field=>[field,periods.filter(row=>row.values[field]!==null).length])) as Record<keyof ActualDay,number>
+  const peak=periods.reduce<typeof periods[number]|undefined>((current,row)=>
+    row.values.corrected!==null&&(!current||row.values.corrected>(current.values.corrected??0))?row:current,undefined)
+  return {totals,denominators,peak,activeDays:periods.filter(row=>row.values.rawCount!==null||row.values.viirsCount!==null).length,usePeriodCoefficient}
 }

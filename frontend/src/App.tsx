@@ -13,7 +13,7 @@ import { Button, Segmented } from './ui'
 import { PuzzleDropdown } from './PuzzlePanels'
 import { puzzleFocus, type Puzzle } from './dailyPuzzle'
 import { useDailyPuzzle } from './useDailyPuzzle'
-import { historicalApi, historicalCells, historicalRequest, useHistorical, actualDay, historicalCalendarValue, scoreDetails } from './historical'
+import { historicalApi, historicalCells, historicalRequest, useHistorical, actualDay, historicalCalendarValue, scoreDetails, actualPeriod, snppArchiveStart } from './historical'
 import { snapshotFromUrl, updateViewUrl } from './viewLink'
 
 import { cinematicTrack, tourRegions, type CameraCommand } from './cameraTour'
@@ -87,6 +87,7 @@ function download(name:string,content:string,type:string) {
 }
 const signed=(value:number)=>(value>=0?'+':'')+Math.round(value)+'%'
 const fmt=(value:number)=>number(Math.round(value))
+const display=(value:number|null|undefined, formatter=fmt)=>value==null?'—':formatter(value)
 const units=(value:number,unit:string)=><>{number(value)} <small>{unit}</small></>
 
 function SensorRow({label,value,unit,active}:{label:string;value:string;unit?:string;active?:boolean}) {
@@ -173,7 +174,6 @@ export function App() {
   const adjustment=stats.raw?100*(stats.corrected/stats.raw-1):0
   const delta=100*(estimates.frp/focus.median-1)
   const severity=demoCells.length&&delta>130?'critical':demoCells.length&&delta>0?'elevated':'normal'
-  const viirs=date>=viirsStart
 
   const game=useDailyPuzzle(focus.id,hasSelectedDay?date:null,setMessage)
   useEffect(()=>{
@@ -181,11 +181,35 @@ export function App() {
   },[game.open,orbiting,settings])
   const historicalPreviewEnabled=false
   const historical=historicalPreviewEnabled&&historicalApi!==undefined&&!game.open
+  const viirs=date>=(historical?snppArchiveStart:viirsStart)
   const actual=useHistorical(historical,historicalRequest(settings),date)
   const cells=useMemo(()=>historical?historicalCells(actual.rows??[],harmonized):demoCells,[historical,actual.rows,harmonized,demoCells])
 
 
   const observedDays=useMemo(()=>actual.days?.map(day=>({date:day.date,values:actualDay(day,pass)}))??[],[actual.days,pass])
+  const observedPeriod=useMemo(()=>actualPeriod(observedDays.filter(day=>day.date>=from&&day.date<=to),
+    endIndex-startIndex+1,pass),[observedDays,from,to,startIndex,endIndex,pass])
+  const observedDay=actualDay(actual.day,pass)
+  const daily=historical?observedDay:stats
+  const totals=historical?observedPeriod.totals:period.totals
+  const mean=(field:keyof typeof observedDay)=>{
+    const count=historical?observedPeriod.denominators[field]:field.startsWith('viirs')?period.viirsDays:period.days
+    const total=totals[field]
+    return count&&total!==null?number(total/count):'—'
+  }
+  const observedAdjustment=observedDay.raw&&observedDay.corrected!==null?100*(observedDay.corrected/observedDay.raw-1):null
+  const observedScore=actual.day?.z_score
+  const context=useMemo(()=>{
+    const field=harmonized?'corrected':'raw'
+    const current=observedDay[field]
+    const values=observedDays.flatMap(day=>day.values[field]===null?[]:[day.values[field]])
+      .sort((a,b)=>a-b)
+    if(current===null||!values.length)return undefined
+    const middle=Math.floor(values.length/2)
+    const median=(values[middle]+values[Math.floor((values.length-1)/2)])/2
+    const rank=values.filter(value=>value>current).length+1
+    return {median,delta:median>0?100*(current/median-1):null,rank,percentile:100*values.filter(value=>value<=current).length/values.length}
+  },[harmonized,observedDay.corrected,observedDay.raw,observedDays])
   const historicalCalendar=useMemo(()=>{
     if(!historical)return undefined
     const byDate=new Map(observedDays.map(day=>[day.date,day.values]))
@@ -465,53 +489,66 @@ export function App() {
 
       <aside className="analytics">
         <div className="panel-header"><span className="section-icon"><Activity size={16}/></span><h2>Analytics &amp; export</h2></div>
-        <div className="accuracy-wrap"><span className="accuracy mono"><Activity size={13}/> WAPE {calibrationAccuracy.holdout_daytime_wape_2025} <i/> BIAS {calibrationAccuracy.west_us_bias}</span></div>
+        <div className="accuracy-wrap"><span className="accuracy mono" title="Validation metrics for the calibration benchmark"><Activity size={13}/> WAPE {calibrationAccuracy.holdout_daytime_wape_2025} <i/> BIAS {calibrationAccuracy.west_us_bias}</span></div>
         <div className="analytics-scroll">
           <div className="analysis-heading">
             <div className="analysis-area"><MapPin size={13}/>{focus.area}</div>
             <h3>{focus.name}</h3>
             <div className="analysis-date mono"><span>{prettyDate(date)} <b>· DOY {String(doy(date)).padStart(3,'0')}</b></span>
-              <span className={'severity '+severity}><span/>{severity==='critical'?'CRITICAL ANOMALY':severity==='elevated'?'ELEVATED':'NOMINAL'}</span></div>
+              <span className={'severity '+(historical?'normal':severity)}><span/>{historical?(daily.rawCount!==null||daily.viirsCount!==null?'OBSERVED':actual.day?'COVERAGE UNKNOWN':'LOADING'):severity==='critical'?'CRITICAL ANOMALY':severity==='elevated'?'ELEVATED':'NOMINAL'}</span></div>
           </div>
+          {historical&&actual.error&&<p className="sensor-note" role="alert">{actual.error} <Button onClick={actual.retry}>Retry</Button></p>}
+          {historical&&!actual.days&&!actual.error&&<p className="sensor-note" role="status">Loading the 2000–2025 archive…</p>}
+          {historical&&actual.complete===false&&<p className="sensor-note">Map display limit reached. CSV and GeoJSON include the full available selection.</p>}
           <section className="analysis-card calibration">
             <h4><Layers3 size={14}/> Scientific intercalibration</h4>
             <div className="sensor-group">Selected day · {date}</div>
-            <SensorRow label="Raw MODIS hotspots" value={fmt(stats.rawCount)} active={!harmonized}/>
-            <SensorRow label="Harmonized MODIS hotspots" value={fmt(stats.correctedCount)} active={harmonized}/>
-            {viirs&&<SensorRow label="VIIRS hotspots" value={fmt(stats.viirsCount)}/>}
-            <SensorRow label="Raw MODIS FRP" value={fmt(stats.raw)} unit="MW" active={!harmonized}/>
-            <SensorRow label="Harmonized MODIS FRP" value={fmt(stats.corrected)} unit="MW" active={harmonized}/>
-            {viirs&&<SensorRow label="VIIRS FRP" value={fmt(stats.viirs)} unit="MW"/>}
-            <div className="correction mono"><ArrowDown size={13}/><b>{adjustment.toFixed(1)}%</b><span>daily FRP adjustment</span></div>
+            <SensorRow label="Raw MODIS hotspots" value={display(daily.rawCount)} active={!harmonized}/>
+            <SensorRow label="Harmonized MODIS hotspots" value={display(daily.correctedCount)} active={harmonized}/>
+            {viirs&&<SensorRow label="VIIRS hotspots" value={display(daily.viirsCount)}/>}
+            <SensorRow label="Raw MODIS FRP" value={display(daily.raw)} unit="MW" active={!harmonized}/>
+            <SensorRow label="Harmonized MODIS FRP" value={display(daily.corrected)} unit="MW" active={harmonized}/>
+            {viirs&&<SensorRow label="VIIRS FRP" value={display(daily.viirs)} unit="MW"/>}
+            <div className="correction mono"><ArrowDown size={13}/><b>{display(historical?observedAdjustment:adjustment,value=>value.toFixed(1)+'%')}</b><span>daily FRP adjustment</span></div>
+            {historical&&<p className="sensor-note">Harmonized values are estimates using the configured coefficients.</p>}
             <div className="sensor-group period-group">Period totals <span>{period.days} {period.days===1?'DAY':'DAYS'}</span></div>
-            <SensorRow label="Raw MODIS hotspots" value={fmt(period.totals.rawCount)}/>
-            <SensorRow label="Harmonized MODIS hotspots" value={fmt(period.totals.correctedCount)} active={harmonized}/>
-            {period.viirsDays>0&&<SensorRow label="VIIRS hotspots" value={fmt(period.totals.viirsCount)}/>}
-            <SensorRow label="Raw MODIS FRP sum" value={fmt(period.totals.raw)} unit="MW·day"/>
-            <SensorRow label="Harmonized MODIS FRP sum" value={fmt(period.totals.corrected)} unit="MW·day" active={harmonized}/>
-            {period.viirsDays>0&&<SensorRow label="VIIRS FRP sum" value={fmt(period.totals.viirs)} unit="MW·day"/>}
+            <SensorRow label="Raw MODIS hotspots" value={display(totals.rawCount)}/>
+            <SensorRow label="Harmonized MODIS hotspots" value={display(totals.correctedCount)} active={harmonized}/>
+            {period.viirsDays>0&&<SensorRow label="VIIRS hotspots" value={display(totals.viirsCount)}/>}
+            <SensorRow label="Raw MODIS FRP sum" value={display(totals.raw)} unit={historical?'MW':'MW·day'}/>
+            <SensorRow label="Harmonized MODIS FRP sum" value={display(totals.corrected)} unit={historical?'MW':'MW·day'} active={harmonized}/>
+            {period.viirsDays>0&&<SensorRow label="VIIRS FRP sum" value={display(totals.viirs)} unit={historical?'MW':'MW·day'}/>}
             <div className="sensor-group period-group">Daily averages <span>{period.usePeriodCoefficient?'PERIOD FRP':'DAILY FRP'}</span></div>
-            <SensorRow label="Raw MODIS hotspots" value={number(period.totals.rawCount/period.days)} unit="/day"/>
-            <SensorRow label="Harmonized MODIS hotspots" value={number(period.totals.correctedCount/period.days)} unit="/day" active={harmonized}/>
-            {period.viirsDays>0&&<SensorRow label="VIIRS hotspots" value={number(period.totals.viirsCount/period.viirsDays)} unit="/day"/>}
-            <SensorRow label="Raw MODIS FRP" value={number(period.totals.raw/period.days)} unit="MW"/>
-            <SensorRow label="Harmonized MODIS FRP" value={number(period.totals.corrected/period.days)} unit="MW" active={harmonized}/>
-            {period.viirsDays>0&&<SensorRow label="VIIRS FRP" value={number(period.totals.viirs/period.viirsDays)} unit="MW"/>}
-            {period.viirsDays>0&&period.viirsDays<period.days&&<p className="sensor-note">VIIRS averages cover {fmt(period.viirsDays)} days from 2012 onward.</p>}
+            <SensorRow label="Raw MODIS hotspots" value={mean('rawCount')} unit="/day"/>
+            <SensorRow label="Harmonized MODIS hotspots" value={mean('correctedCount')} unit="/day" active={harmonized}/>
+            {period.viirsDays>0&&<SensorRow label="VIIRS hotspots" value={mean('viirsCount')} unit="/day"/>}
+            <SensorRow label="Raw MODIS FRP" value={mean('raw')} unit="MW"/>
+            <SensorRow label="Harmonized MODIS FRP" value={mean('corrected')} unit="MW" active={harmonized}/>
+            {period.viirsDays>0&&<SensorRow label="VIIRS FRP" value={mean('viirs')} unit="MW"/>}
+            {historical?<p className="sensor-note">Averages use days with available values for each metric. FRP days: MODIS {fmt(observedPeriod.denominators.raw)}, VIIRS {fmt(observedPeriod.denominators.viirs)}.</p>:
+              period.viirsDays>0&&period.viirsDays<period.days&&<p className="sensor-note">VIIRS averages cover {fmt(period.viirsDays)} days from 2012 onward.</p>}
             <div className="sensor-group period-group">Activity in selected period</div>
-            <SensorRow label="Days with detections" value={fmt(period.activeDays)} unit={'/ '+fmt(period.days)}/>
-            <SensorRow label="Peak harmonized FRP day" value={period.peak?archiveDates[period.peakDay]:'—'} unit={period.peak?fmt(period.peak)+' MW':undefined}/>
+            <SensorRow label="Days with detections" value={historical?display(actual.days?observedPeriod.activeDays:null):fmt(period.activeDays)} unit={'/ '+fmt(period.days)}/>
+            <SensorRow label="Peak harmonized FRP day" value={historical?observedPeriod.peak?.date??'—':period.peak?archiveDates[period.peakDay]:'—'}
+              unit={historical?(observedPeriod.peak?display(observedPeriod.peak.values.corrected)+' MW':undefined):period.peak?fmt(period.peak)+' MW':undefined}/>
           </section>
           <section className="analysis-card historical">
             <h4><Clock3 size={14}/> Historical context</h4>
-            <div className="historical-row"><span><strong className="mono">{signed(delta)}</strong> vs historical median</span><small className="mono">{number(focus.median)} MW BASELINE</small></div>
-            <div className="historical-row"><span><strong className="mono">{cells.length?'#'+focus.rank:'—'}</strong> severity rank <small className="inline-meta">/ 26 years</small></span><small className="mono">{cells.length?focus.percentile.toFixed(1)+'TH PERCENTILE':'NO ACTIVE CELLS'}</small></div>
+            {historical?<>
+              <div className="historical-row"><span><strong className="mono">{display(context?.delta,signed)}</strong> vs historical median</span><small className="mono">{display(context?.median)} MW BASELINE</small></div>
+              <div className="historical-row"><span><strong className="mono">{display(context?.rank,value=>'#'+fmt(value))}</strong> FRP rank <small className="inline-meta">/ observed days</small></span><small className="mono">{context?context.percentile.toFixed(1)+'TH PERCENTILE':'—'}</small></div>
+              <div className="historical-row" title={scoreDetails(actual.day)}>
+                <span><strong className="mono">{display(observedScore,value=>value.toFixed(2))}</strong> Z-score</span><small className="mono">OBSERVED DAYS</small></div>
+            </>:<>
+              <div className="historical-row"><span><strong className="mono">{signed(delta)}</strong> vs historical median</span><small className="mono">{number(focus.median)} MW BASELINE</small></div>
+              <div className="historical-row"><span><strong className="mono">{cells.length?'#'+focus.rank:'—'}</strong> severity rank <small className="inline-meta">/ 26 years</small></span><small className="mono">{cells.length?focus.percentile.toFixed(1)+'TH PERCENTILE':'NO ACTIVE CELLS'}</small></div>
+            </>}
           </section>
           <div className="kpis">
-            <section><span><Grid2X2 size={13}/> Active fire cells</span><strong className="mono">{units(cells.length,'cells')}</strong></section>
-            <section><span><Zap size={13}/> Radiative energy</span><strong className="mono">{units(estimates.fre,'TJ')}</strong></section>
-            <section className="wide-kpi" title="FRP ÷ [0.95 × σ × (800⁴ − 300⁴)], expressed in km²"><span><FocusIcon size={13}/> Estimated fire area</span><strong className="mono">{units(estimates.area,'km²')}</strong></section>
-            <section className="wide-kpi" title="FRE × 0.368 kg dry matter/MJ × 1.626 kg CO₂/kg dry matter"><span><Leaf size={13}/> Estimated CO₂ emissions</span><strong className="mono">{units(estimates.co2,'t')}</strong></section>
+            <section><span><Grid2X2 size={13}/> Active fire cells</span><strong className="mono">{historical&&!actual.rows?'—':units(cells.length,'cells')}</strong></section>
+            <section title={historical?'Requires time integration of FRP':undefined}><span><Zap size={13}/> Radiative energy</span><strong className="mono">{historical?'—':units(estimates.fre,'TJ')}</strong></section>
+            <section className="wide-kpi" title={historical?'Requires a validated area estimate':'FRP ÷ [0.95 × σ × (800⁴ − 300⁴)], expressed in km²'}><span><FocusIcon size={13}/> Estimated fire area</span><strong className="mono">{historical?'—':units(estimates.area,'km²')}</strong></section>
+            <section className="wide-kpi" title={historical?'Requires time integration and an emissions model':'FRE × 0.368 kg dry matter/MJ × 1.626 kg CO₂/kg dry matter'}><span><Leaf size={13}/> Estimated CO₂ emissions</span><strong className="mono">{historical?'—':units(estimates.co2,'t')}</strong></section>
           </div>
         </div>
         <div className="export-buttons">
