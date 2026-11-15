@@ -2,10 +2,11 @@ import { useEffect, useRef, type RefObject } from 'react'
 import { OrbitalScene, type SpaceTransfer } from './orbitalScene'
 import { spaceTransferOpacity } from './cameraTour'
 
-export function SpaceCanvas({frame,transferRef,layerRef}:{
+export function SpaceCanvas({frame,transferRef,layerRef,readyRef}:{
   frame:{width:number;height:number}
   transferRef:RefObject<SpaceTransfer|null>
   layerRef:RefObject<HTMLDivElement|null>
+  readyRef:RefObject<boolean>
 }) {
   const canvas=useRef<HTMLCanvasElement>(null)
   const scene=useRef<OrbitalScene|null>(null)
@@ -33,10 +34,11 @@ export function SpaceCanvas({frame,transferRef,layerRef}:{
       hide()
     }
     const draw=()=>{
+      readyRef.current=Boolean(scene.current?.ready)&&!contextLost
       const transfer=transferRef.current
       if(transfer!==previous){
         const opacity=transfer?spaceTransferOpacity(transfer.progress):0
-        if(transfer&&opacity>0&&scene.current&&!contextLost){
+        if(transfer&&opacity>0&&scene.current?.ready&&!contextLost){
           scene.current.render(transfer)
           layer.style.opacity=String(opacity)
           layer.dataset.scene='earth'
@@ -49,13 +51,14 @@ export function SpaceCanvas({frame,transferRef,layerRef}:{
     if(scene.current)id=requestAnimationFrame(draw)
     return ()=>{
       cancelAnimationFrame(id)
+      readyRef.current=false
       element.removeEventListener('webglcontextlost',loseContext)
       element.removeEventListener('webglcontextrestored',restoreContext)
       hide()
       scene.current?.dispose()
       scene.current=null
     }
-  },[layerRef,transferRef])
+  },[layerRef,readyRef,transferRef])
 
   useEffect(()=>{
     scene.current?.resize(frame.width,frame.height)

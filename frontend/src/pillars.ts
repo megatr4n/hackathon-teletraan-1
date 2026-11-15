@@ -4,11 +4,12 @@ import { offset, type MapCell } from './data'
 const vertex = `#version 300 es
 precision highp float;
 uniform mat4 matrix;
+uniform float heightScale;
 in vec3 position;
 in vec3 color;
 out vec3 tint;
 void main() {
-  gl_Position = matrix * vec4(position, 1.);
+  gl_Position = matrix * vec4(position.xy, position.z * heightScale, 1.);
   tint = color;
 }`
 const fragment = `#version 300 es
@@ -19,6 +20,9 @@ void main() { pixel = vec4(tint, 1.); }`
 const faces = [[0,1],[1,2],[2,3],[3,0]]
 const shades = [.79, .67, .96, 1]
 const colors = [[.48,.037,.038],[1,.24,.028],[1,.68,.135]]
+const growthDurationMs = 1250
+const growthExponent = 2
+const growthEnd = Math.expm1(growthExponent)
 type GL = WebGL2RenderingContext
 
 // Keep the existing low-FRP slope and gradually compress taller columns.
@@ -38,6 +42,7 @@ export class FirePillars implements CustomLayerInterface {
   private buffer?: WebGLBuffer
   private vao?: WebGLVertexArrayObject
   private length = 0
+  private growthStartedAt?: number | null
 
   onAdd(map: Map, gl: GL) {
     const compile = (type: number, source: string) => {
@@ -70,7 +75,7 @@ export class FirePillars implements CustomLayerInterface {
     gl.bindVertexArray(null)
   }
 
-  update(cells: MapCell[]) {
+  update(cells: MapCell[], animate: boolean) {
     if (!this.gl || !this.buffer) return
     const vertices: number[] = []
     for (const cell of cells) {
@@ -96,6 +101,9 @@ export class FirePillars implements CustomLayerInterface {
     this.gl.bindBuffer(this.gl.ARRAY_BUFFER,this.buffer)
     this.gl.bufferData(this.gl.ARRAY_BUFFER,new Float32Array(vertices),this.gl.DYNAMIC_DRAW)
     this.length = vertices.length / 6
+    this.growthStartedAt = animate && this.length > 0 && !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      ? null
+      : undefined
     this.map?.triggerRepaint()
   }
 
@@ -109,6 +117,19 @@ export class FirePillars implements CustomLayerInterface {
     gl.depthMask(true)
     gl.useProgram(this.program)
     gl.uniformMatrix4fv(gl.getUniformLocation(this.program,'matrix'),false,options.defaultProjectionData.mainMatrix)
+    let heightScale = 1
+    if (this.growthStartedAt !== undefined) {
+      const now = performance.now()
+      this.growthStartedAt ??= now
+      const progress = (now - this.growthStartedAt) / growthDurationMs
+      if (progress < 1) {
+        heightScale = Math.expm1(progress * growthExponent) / growthEnd
+        this.map?.triggerRepaint()
+      } else {
+        this.growthStartedAt = undefined
+      }
+    }
+    gl.uniform1f(gl.getUniformLocation(this.program,'heightScale'),heightScale)
     gl.bindVertexArray(this.vao)
     gl.drawArrays(gl.TRIANGLES,0,this.length)
     gl.bindVertexArray(null)

@@ -8,7 +8,7 @@ import { Button, InfoTip, frpHelp } from './ui'
 import { asset, type AreaMode, type RegionCollection, type RegionFeature } from './geography'
 import { initialSnapshot, type Camera, type MapOptions } from './pins'
 
-import { cameraBetween, transferCamera, transferDuration, type CameraCommand } from './cameraTour'
+import { cameraBetween, demoTransferDuration, hotspotShots, transferCamera, transferDuration, type CameraCommand, type Shot } from './cameraTour'
 import { StarField } from './StarField'
 import type { SpaceTransfer } from './orbitalScene'
 
@@ -21,15 +21,16 @@ const KeplerMap = lazy(() => loadKepler().then(module => ({default:module.Kepler
 
 export type Tool = 'circle' | 'lasso' | null
 type Props = {
-  focus:Focus; date:string; cells:MapCell[]; weekly:boolean; aoi:Aoi|null; tool:Tool;
+  focus:Focus; date:string; cells:MapCell[]; weekly:boolean; loadingCells:boolean; aoi:Aoi|null; tool:Tool;
   onArea:(area:Aoi)=>void; onCirclePreviewRadius:(radius:number|null)=>void;
   command:CameraCommand|null; onCamera:(camera:Camera)=>void;
   options:MapOptions; onOptions:(options:MapOptions)=>void;
   countries:RegionCollection; admins:RegionCollection; ecoregions:RegionCollection; areaMode:AreaMode;
   selected:RegionFeature|undefined; onRegion:(region:RegionFeature,point?:Coord)=>void;
-  measuring:boolean; orbiting:boolean; onTourEnd:()=>void; historical:boolean;
+  measuring:boolean; orbiting:boolean; onTourEnd:()=>void; historical:boolean; playing:boolean;
 }
 const empty: FeatureCollection = {type:'FeatureCollection',features:[]}
+const overlayFade={duration:450,delay:0}
 const satelliteTiles = (date:string) => 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Terra_CorrectedReflectance_TrueColor/default/'+date+'/GoogleMapsCompatible_Level9/{z}/{y}/{x}.jpg'
 const collection = (features:FeatureCollection['features']): FeatureCollection => ({type:'FeatureCollection',features})
 const labels: { name:string; point:Coord; type?:string }[] = [
@@ -44,6 +45,12 @@ function mapStyle(): StyleSpecification {
     countries:{type:'geojson',data:empty},
     worldRelief:{type:'image',url:asset('global.webp'),coordinates:[[-180,tileLat(0)],[180,tileLat(0)],[180,tileLat(256)],[-180,tileLat(256)]]},
     relief:{type:'image',url:asset('tactical.webp'),coordinates:[ [143/256*360-180, tileLat(80)], [158/256*360-180,tileLat(80)], [158/256*360-180,tileLat(91)], [143/256*360-180,tileLat(91)] ]},
+    surface:{type:'raster',tileSize:256,maxzoom:14,tiles:[
+      'https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless_3857/default/GoogleMapsCompatible/{z}/{y}/{x}.jpg',
+    ]},
+    elevation:{type:'raster-dem',encoding:'terrarium',tileSize:512,maxzoom:12,tiles:[
+      'https://tiles.mapterhorn.com/{z}/{x}/{y}.webp',
+    ]},
     hydrology:{type:'geojson',data:asset('hydrology.json')},
     satellite:{type:'raster',tiles:[satelliteTiles('2020-04-14')],tileSize:256,maxzoom:9,attribution:'NASA EOSDIS GIBS'},
     grid:{type:'geojson',data:empty},
@@ -64,11 +71,21 @@ function mapStyle(): StyleSpecification {
   },layers:[
     {id:'ocean',type:'background',paint:{'background-color':'#0a111a','background-opacity':.88}},
     {id:'land',type:'fill',source:'countries',paint:{'fill-color':'#171f25'}},
-    {id:'world-relief',type:'raster',source:'worldRelief',paint:{'raster-fade-duration':0}},
-    {id:'tactical',type:'raster',source:'relief',paint:{'raster-fade-duration':0}},
-    {id:'sat',type:'raster',source:'satellite',layout:{visibility:'none'},paint:{'raster-fade-duration':150,'raster-brightness-max':.72}},
-    {id:'lakes',type:'fill',source:'hydrology',filter:['==',['geometry-type'],'Polygon'],paint:{'fill-color':'#132735','fill-opacity':.86}},
-    {id:'rivers',type:'line',source:'hydrology',filter:['==',['geometry-type'],'LineString'],paint:{'line-color':'#3b586b','line-width':['interpolate',['linear'],['zoom'],4,.35,8,1.2],'line-opacity':.68}},
+    {id:'world-relief',type:'raster',source:'worldRelief',paint:{'raster-fade-duration':0,'raster-brightness-min':.045}},
+    {id:'tactical',type:'raster',source:'relief',paint:{'raster-fade-duration':0,'raster-brightness-min':.045,'raster-saturation':.18}},
+    {id:'surface',type:'raster',source:'surface',minzoom:4,layout:{visibility:'none'},paint:{
+      'raster-fade-duration':220,'raster-brightness-min':.105,'raster-saturation':.08,'raster-contrast':.04,
+    }},
+    {id:'surface-shade',type:'hillshade',source:'elevation',minzoom:5,layout:{visibility:'none'},paint:{
+      'hillshade-illumination-direction':320,'hillshade-illumination-anchor':'map','hillshade-exaggeration':.43,
+      'hillshade-shadow-color':'#07131f','hillshade-highlight-color':'#dfccb2','hillshade-accent-color':'#213244',
+    }},
+    {id:'sat',type:'raster',source:'satellite',layout:{visibility:'none'},paint:{
+      'raster-fade-duration':180,'raster-opacity':.64,'raster-brightness-min':.05,'raster-brightness-max':.57,
+      'raster-saturation':-.25,'raster-contrast':.12,
+    }},
+    {id:'lakes',type:'fill',source:'hydrology',filter:['==',['geometry-type'],'Polygon'],paint:{'fill-color':'#132735','fill-opacity':['interpolate',['linear'],['zoom'],4,.86,8,.22]}},
+    {id:'rivers',type:'line',source:'hydrology',filter:['==',['geometry-type'],'LineString'],paint:{'line-color':'#3b586b','line-width':['interpolate',['linear'],['zoom'],4,.35,8,1.2],'line-opacity':['interpolate',['linear'],['zoom'],4,.68,8,.29]}},
     {id:'peat-west',type:'raster',source:'peatWest',layout:{visibility:'none'},paint:{'raster-opacity':.78,'raster-fade-duration':0}},
     {id:'peat-east',type:'raster',source:'peatEast',layout:{visibility:'none'},paint:{'raster-opacity':.78,'raster-fade-duration':0}},
     {id:'global-parks',type:'raster',source:'globalParks',layout:{visibility:'none'},paint:{'raster-opacity':.55}},
@@ -76,22 +93,37 @@ function mapStyle(): StyleSpecification {
     {id:'protected-line',type:'line',source:'parks',layout:{visibility:'none'},paint:{'line-color':['match',['get','kind'],'exclusion','#e4c990','#7cdb91'],'line-width':1.25}},
     {id:'country-hit',type:'fill',source:'countries',paint:{'fill-color':'#3d6b91','fill-opacity':0}},
     {id:'admin-hit',type:'fill',source:'admins',paint:{'fill-color':'#60add3','fill-opacity':.045}},
-    {id:'admin-line',type:'line',source:'admins',paint:{'line-color':'#6797b6','line-opacity':.62,'line-width':.8,'line-dasharray':[2,2]}},
+    {id:'admin-line',type:'line',source:'admins',paint:{'line-color':'#81a7bd','line-opacity':.52,'line-opacity-transition':overlayFade,'line-width':.8,'line-dasharray':[2,3]}},
     {id:'eco-hit',type:'fill',source:'eco',paint:{'fill-color':'#69ae94','fill-opacity':.065}},
-    {id:'eco-line',type:'line',source:'eco',paint:{'line-color':'#76b298','line-opacity':.55,'line-width':.8}},
-    {id:'boundaries',type:'line',source:'countries',paint:{'line-color':'#586575','line-opacity':.63,'line-width':1.1,'line-dasharray':[4,3]}},
-    {id:'cell-grid',type:'line',source:'grid',paint:{'line-color':'#e19350','line-width':.65,'line-opacity':.38}},
-    {id:'hazard-fill',type:'fill',source:'hazard',paint:{'fill-color':'#ef672b','fill-opacity':.048}},
-    {id:'hazard-contour',type:'line',source:'hazard',paint:{'line-color':['case',['==',['get','z'],2.5],'#f18845','#aa5e45'],'line-width':['case',['==',['get','z'],2.5],1.25,.9],'line-dasharray':[4,3],'line-opacity':.9}},
-    {id:'area-fill',type:'fill',source:'area',paint:{'fill-color':'#4ac7e8','fill-opacity':.08}},
-    {id:'area-outline',type:'line',source:'area',paint:{'line-color':'#5ed1ec','line-width':1.2,'line-opacity':.74,'line-dasharray':[3,2]}},
-    {id:'circle-preview-fill',type:'fill',source:'circlePreview',paint:{'fill-color':'#4ac7e8','fill-opacity':.08}},
-    {id:'circle-preview-line',type:'line',source:'circlePreview',paint:{'line-color':'#65d7f3','line-width':1.35,'line-dasharray':[3,2]}},
+    {id:'eco-line',type:'line',source:'eco',paint:{'line-color':'#76b298','line-opacity':.55,'line-opacity-transition':overlayFade,'line-width':.8}},
+    {id:'boundaries',type:'line',source:'countries',paint:{'line-color':'#96a8bd','line-opacity':.54,'line-opacity-transition':overlayFade,'line-width':1.1,'line-dasharray':[5,4]}},
+    {id:'cell-grid',type:'line',source:'grid',paint:{'line-color':'#deac76','line-width':.65,'line-opacity':.32,'line-opacity-transition':overlayFade}},
+    {id:'hazard-fill',type:'fill',source:'hazard',paint:{
+      'fill-color':['case',['==',['get','z'],2.5],'#ff7139','#e38a4b'],
+      'fill-opacity':['case',['==',['get','z'],2.5],.12,.045],
+    }},
+    {id:'hazard-halo',type:'line',source:'hazard',layout:{'line-join':'round'},paint:{
+      'line-color':['case',['==',['get','z'],2.5],'#ff632a','#d88852'],
+      'line-width':['interpolate',['linear'],['zoom'],4,3,8,7,12,10],'line-blur':3,
+      'line-opacity':['case',['==',['get','z'],2.5],.43,.24],
+    }},
+    {id:'hazard-contour',type:'line',source:'hazard',layout:{'line-join':'round'},paint:{
+      'line-color':['case',['==',['get','z'],2.5],'#ffd195','#e9a874'],
+      'line-width':['case',['==',['get','z'],2.5],1.8,1.15],'line-dasharray':[4,2.5],'line-opacity':.94,
+    }},
+    {id:'area-fill',type:'fill',source:'area',paint:{'fill-color':'#26a4bf','fill-opacity':.09}},
+    {id:'area-halo',type:'line',source:'area',layout:{'line-join':'round'},paint:{
+      'line-color':'#2bc8ef','line-width':['interpolate',['linear'],['zoom'],3,3,8,7,12,10],'line-blur':3,'line-opacity':.46,
+    }},
+    {id:'area-outline',type:'line',source:'area',layout:{'line-join':'round'},paint:{'line-color':'#a3efff','line-width':1.55,'line-opacity':.95}},
+    {id:'circle-preview-fill',type:'fill',source:'circlePreview',paint:{'fill-color':'#26a4bf','fill-opacity':.09}},
+    {id:'circle-preview-line',type:'line',source:'circlePreview',layout:{'line-join':'round'},paint:{'line-color':'#a3efff','line-width':1.4,'line-dasharray':[3,2]}},
     {id:'fire-footprint',type:'fill',source:'fires',paint:{'fill-color':['interpolate',['linear'],['get','power'],0,'#8c3626',35,'#e65c2b',140,'#ffa354'],'fill-opacity':.85}},
     {id:'fire-centers',type:'circle',source:'fireCenters',maxzoom:8,paint:{'circle-radius':['interpolate',['linear'],['zoom'],2,['interpolate',['linear'],['get','detections'],1,1.3,25,3.6],5,['interpolate',['linear'],['get','detections'],1,2.1,25,5.4],8,['interpolate',['linear'],['get','detections'],1,2.5,25,6.5]],'circle-color':'#fb883f','circle-opacity':.82}},
     {id:'crosshair',type:'line',source:'target',paint:{'line-color':'#e69b61','line-width':1.15,'line-opacity':.75}},
   ]}
 }
+
 function tileLat(y:number) { return Math.atan(Math.sinh(Math.PI * (1-2*y/256))) * 180 / Math.PI }
 function hazardShape(center:Coord,x:number,y:number,rx:number,ry:number,z:number) {
   const angles = Array.from({length:25},(_,i)=>i*Math.PI/12)
@@ -99,8 +131,8 @@ function hazardShape(center:Coord,x:number,y:number,rx:number,ry:number,z:number
   return {type:'Feature' as const,properties:{z},geometry:{type:'Polygon' as const,coordinates:[[...ring,ring[0]]]}}
 }
 
-export function MapStage({focus,date,cells,weekly,aoi,tool,onArea,onCirclePreviewRadius,command,onCamera,options,onOptions,
-  countries,admins,ecoregions,areaMode,selected,onRegion,measuring,orbiting,onTourEnd,historical}:Props) {
+export function MapStage({focus,date,cells,loadingCells,weekly,aoi,tool,onArea,onCirclePreviewRadius,command,onCamera,options,onOptions,
+  countries,admins,ecoregions,areaMode,selected,onRegion,measuring,orbiting,onTourEnd,historical,playing}:Props) {
   const holder=useRef<HTMLDivElement>(null), map=useRef<maplibregl.Map|null>(null)
   const fire=useRef<FirePillars|null>(null), places=useRef<maplibregl.Marker[]>([])
   const [ready,setReady]=useState(false)
@@ -113,16 +145,20 @@ export function MapStage({focus,date,cells,weekly,aoi,tool,onArea,onCirclePrevie
   const circleDrag=useRef<{pointerId:number;center:Coord;start:[number,number];preview:GeoJSONSource}|null>(null)
   const [circleLine,setCircleLine]=useState<[Coord,Coord]|null>(null)
   const ruler=useRef<Coord|null>(null)
-  const [regionFlying,setRegionFlying]=useState(false)
   const [cameraToApply,setCameraToApply]=useState<CameraCommand|null>(null)
+  const [spaceCommand,setSpaceCommand]=useState<CameraCommand|null>(null)
+  const [hotspotView,setHotspotView]=useState(false)
   const animation=useRef<number>(0)
   const spaceLayer=useRef<HTMLDivElement>(null)
   const transferRef=useRef<SpaceTransfer|null>(null)
+  const orbitalReady=useRef(false)
   const cameraFrame=useRef(0)
   const previous=useRef<Camera>(camera)
   const commandedCamera=useRef<Camera|null>(null)
   const callbacks=useRef({onCamera,onRegion,areaMode,onTourEnd})
   callbacks.current={onCamera,onRegion,areaMode,onTourEnd}
+  const tourData=useRef({focus,cells,loadingCells})
+  tourData.current={focus,cells,loadingCells}
   const style=useMemo(mapStyle,[])
 
   const changeCamera=useCallback((camera:Partial<Camera>,duration=0)=>setCameraToApply({camera,duration}),[])
@@ -175,80 +211,93 @@ export function MapStage({focus,date,cells,weekly,aoi,tool,onArea,onCirclePrevie
     const instance=map.current
     if(!cameraToApply||!ready||!instance) return
     const request=cameraToApply
-    const globe='globe' in request?request.globe:null
     const track='track' in request?request.track:null
-    if(track&&!orbiting)return
+    if(track&&!orbiting){
+      commandedCamera.current=null
+      return
+    }
     let active=true
-    setRegionFlying(globe!==null)
+    let focusingOnHotspots=false
+    const updateHotspotView=(focusOnHotspots:boolean)=>{
+      if(focusingOnHotspots===focusOnHotspots)return
+      focusingOnHotspots=focusOnHotspots
+      setHotspotView(focusOnHotspots)
+    }
     void loadKepler().then(({setKeplerCamera})=>{
       if(!active)return
-      let last=(orbiting?commandedCamera.current:null)??previous.current
+      const origin=(orbiting?commandedCamera.current:null)??previous.current
       const applyFrame=(camera:Camera)=>{
-        last=camera
+        if(commandedCamera.current===camera)return
         commandedCamera.current=camera
         setKeplerCamera(camera)
       }
-      const basedOnFlight=track&&'flight' in track?track.flight:null
-      const toMapCamera=(pose:ReturnType<NonNullable<typeof basedOnFlight>['at']>):Camera=>{
-        const {position,altitude,bearing,pitch}=pose
-        const options=instance.calculateCameraOptionsFromCameraLngLatAltRotation(position,altitude,bearing,pitch)
-        const center=maplibregl.LngLat.convert(options.center!).wrap()
-        return {lat:center.lat,lon:center.lng,zoom:options.zoom??last.zoom,bearing,pitch}
-      }
-      const transfer=globe?{moon:false}:track?.transfer
-      const arrival=globe?{...last,...globe}:basedOnFlight?toMapCamera(basedOnFlight.at(0)):track&&'arrival' in track?track.arrival:null
-      const shots=track&&'shots' in track?track.shots:'camera' in request?[{to:{...last,...request.camera},ms:request.duration}]:[]
-      const startTime='globe' in request?request.startedAt:performance.now()
-      const transferTime=globe?3500:transfer?transferDuration:0
-      const lowZoom=transfer?toMapCamera({
-        position:[last.lon,last.lat],altitude:3600,bearing:last.bearing,pitch:76,
-      }).zoom:last.zoom
-      const regionalDuration=basedOnFlight?.duration??shots.reduce((sum,shot)=>sum+shot.ms,0)
-      const totalDuration=transferTime+regionalDuration
-      const origin=last
-      const regionalStart=arrival??last
+      const destination='globe' in request?{...origin,...request.globe}:null
+      if(destination)setSpaceCommand(request)
+      const arrival=destination??track?.arrival??null
+      let shots:Shot[]|null='camera' in request?[{to:{...origin,...request.camera},ms:request.duration}]:null
+      let startTime:number|undefined
+      let waitForGlobeFrom:number|undefined
+      let regionalStartTime:number|undefined
+      const transferTime=destination?3500:track?.short?demoTransferDuration:track?transferDuration:0
 
       const tick=(now:number)=>{
-        const elapsed=Math.min(totalDuration,Math.max(0,now-startTime))
-        if(transfer&&arrival&&elapsed<transferTime){
+        waitForGlobeFrom??=now
+        if(startTime===undefined&&track?.short&&track.stop===0&&!orbitalReady.current&&now-waitForGlobeFrom<400){
+          animation.current=requestAnimationFrame(tick)
+          return
+        }
+        startTime??='globe' in request?request.startedAt:now
+        const elapsed=now-startTime
+        if(arrival&&elapsed<transferTime){
           const progress=elapsed/transferTime
-          const camera=transferCamera(origin,arrival,lowZoom,progress)
-          transferRef.current={moon:transfer.moon??false,progress,camera,viewportHeight:instance.getCanvas().clientHeight}
+          const camera=transferCamera(origin,arrival,progress)
+          transferRef.current={moon:track?.moon??false,progress,camera,viewportHeight:instance.getCanvas().clientHeight}
           applyFrame(camera)
-        }else{
-          transferRef.current=null
-          const timeInRegion=elapsed-transferTime
-          if(globe&&arrival){
-            applyFrame(arrival)
-          }else if(basedOnFlight){
-            applyFrame(toMapCamera(basedOnFlight.at(timeInRegion/basedOnFlight.duration)))
-          }else{
-            let from=regionalStart
-            let remaining=timeInRegion
-            for(const shot of shots){
-              if(remaining<=shot.ms){
-                applyFrame(cameraBetween(from,shot.to,shot.ms===0?1:remaining/shot.ms,shot.ease,shot.sweep))
-                break
-              }
-              remaining-=shot.ms
-              from=shot.to
-            }
-          }
+          animation.current=requestAnimationFrame(tick)
+          return
         }
-        if(elapsed<totalDuration)animation.current=requestAnimationFrame(tick)
-        else{
-          if(track)callbacks.current.onTourEnd()
-          else {
-            commandedCamera.current=null
-            if(globe)setRegionFlying(false)
-          }
+        transferRef.current=null
+        if(destination){
+          applyFrame(destination)
+          setSpaceCommand(null)
+          commandedCamera.current=null
+          return
         }
+        regionalStartTime??=now
+        if(track&&!shots){
+          const data=tourData.current
+          const overviewTime=now-regionalStartTime
+          if(overviewTime<(track.short?100:950)||(data.loadingCells&&overviewTime<(track.short?150:3800))){
+            applyFrame(track.arrival)
+            animation.current=requestAnimationFrame(tick)
+            return
+          }
+          const {clientWidth,clientHeight}=instance.getCanvas()
+          shots=hotspotShots(track.arrival,data.focus===track.focus?data.cells:[],clientWidth,clientHeight,track.short)
+          regionalStartTime=now
+        }
+        let from=arrival??origin
+        let remaining=now-regionalStartTime
+        for(const shot of shots??[]){
+          if(remaining<shot.ms){
+            updateHotspotView(shot.focusOnHotspots??false)
+            applyFrame(from===shot.to?from:cameraBetween(from,shot.to,remaining/shot.ms))
+            animation.current=requestAnimationFrame(tick)
+            return
+          }
+          remaining-=shot.ms
+          from=shot.to
+        }
+        updateHotspotView(false)
+        applyFrame(from)
+        if(!track)commandedCamera.current=null
+        if(track)callbacks.current.onTourEnd()
       }
-      if(basedOnFlight&&!transfer)applyFrame(toMapCamera(basedOnFlight.at(0)))
-      if(globe||basedOnFlight||shots.length)animation.current=requestAnimationFrame(tick)
+      animation.current=requestAnimationFrame(tick)
     })
     return ()=>{
       active=false
+      updateHotspotView(false)
       cancelAnimationFrame(animation.current)
       transferRef.current=null
       spaceLayer.current?.style.setProperty('opacity','0')
@@ -273,6 +322,8 @@ export function MapStage({focus,date,cells,weekly,aoi,tool,onArea,onCirclePrevie
     return ()=>places.current.forEach(marker=>marker.remove())
   },[focus,ready])
 
+  const showDemoContours=!historical&&cells.length>0
+
   useEffect(()=>{
     const instance=map.current
     if (!ready || !instance) return
@@ -285,15 +336,18 @@ export function MapStage({focus,date,cells,weekly,aoi,tool,onArea,onCirclePrevie
     })))
     set('fireCenters',collection(historical?cells.map(cell=>({type:'Feature',properties:{detections:cell.weight},
       geometry:{type:'Point',coordinates:cell.center}})):[]))
-    const hazards = !historical && cells.length ? [hazardShape(focus.center,6,-1,64,40,1.5),hazardShape(focus.center,-12,13,24,13,2.5),hazardShape(focus.center,25,-12,31,16,2.5)] : []
+    const hazards = showDemoContours ? [hazardShape(focus.center,6,-1,64,40,1.5),hazardShape(focus.center,-12,13,24,13,2.5),hazardShape(focus.center,25,-12,31,16,2.5)] : []
     set('hazard',collection(hazards))
     set('area',collection(aoi ? [{type:'Feature',geometry:areaPolygon(aoi),properties:{}}] : selected ? [selected] : []))
     set('target',collection([{type:'Feature',properties:{},geometry:{type:'MultiLineString',coordinates:[
       [offset(focus.center,-4,0),offset(focus.center,-1.7,0)],[offset(focus.center,1.7,0),offset(focus.center,4,0)],
       [offset(focus.center,0,-4),offset(focus.center,0,-1.7)],[offset(focus.center,0,1.7),offset(focus.center,0,4)],
     ]}}]))
-    fire.current?.update(cells)
-  },[cells,focus,ready,aoi,selected,historical])
+  },[cells,focus,harmonized,ready,aoi,selected,historical,showDemoContours])
+
+  useEffect(()=>{
+    if(ready)fire.current?.update(cells,!playing)
+  },[cells,ready,playing])
 
   useEffect(()=>{
     const instance=map.current
@@ -310,10 +364,21 @@ export function MapStage({focus,date,cells,weekly,aoi,tool,onArea,onCirclePrevie
     const visibility=(id:string,show:boolean)=>instance.setLayoutProperty(id,'visibility',show?'visible':'none')
     visibility('cell-grid',options.grid)
     visibility('sat',options.satellite)
+    visibility('surface',!options.satellite)
+    visibility('surface-shade',!options.satellite)
     for(const layer of ['lakes','rivers'])visibility(layer,!options.satellite)
     for(const layer of ['peat-west','peat-east','global-parks','protected-line','protected-fill'])visibility(layer,options.ecosystems)
     if(options.satellite)(instance.getSource('satellite') as RasterTileSource).setTiles([satelliteTiles(date)])
   },[options,date,ready])
+
+  useEffect(()=>{
+    const instance=map.current
+    if(!ready||!instance)return
+    instance.setPaintProperty('cell-grid','line-opacity',hotspotView ? .075 : .32)
+    instance.setPaintProperty('boundaries','line-opacity',hotspotView ? .19 : .54)
+    instance.setPaintProperty('admin-line','line-opacity',hotspotView ? .16 : .52)
+    instance.setPaintProperty('eco-line','line-opacity',hotspotView ? .19 : .55)
+  },[ready,hotspotView])
 
   useEffect(()=>{
     if(!measuring){setSegments([]);setDraft(null);ruler.current=null}
@@ -436,7 +501,7 @@ export function MapStage({focus,date,cells,weekly,aoi,tool,onArea,onCirclePrevie
   const circleEnd=circleLine&&map.current?.project(circleLine[1])
   const bearing = Math.round(camera.bearing)%360
   const cardinal = ['N','NE','E','SE','S','SW','W','NW'][Math.round(bearing/45)%8]
-  return <section className="map-stage" aria-label="Wildfire map viewport">
+  return <section className="map-stage" data-oblique={camera.pitch>=28} data-hotspot-view={hotspotView} aria-label="Wildfire map viewport">
     <div ref={holder} className="map-canvas" onPointerDownCapture={event=>{pointer.current={x:event.clientX,y:event.clientY}}}
       onPointerUpCapture={selectAtPoint}>
       {size.width>0&&<Suspense fallback={<div className="map-loading">Loading Kepler.gl…</div>}>
@@ -445,8 +510,9 @@ export function MapStage({focus,date,cells,weekly,aoi,tool,onArea,onCirclePrevie
     </div>
     <div className="map-vignette" aria-hidden="true" />
     <StarField width={size.width} height={Math.min(112,Math.round(size.height*.22))}/>
-    {(orbiting||regionFlying)&&<div className="orbital-layer" ref={spaceLayer} aria-hidden="true">
-      <Suspense fallback={null}><SpaceCanvas frame={size} transferRef={transferRef} layerRef={spaceLayer}/></Suspense>
+    {(orbiting||(spaceCommand!==null&&spaceCommand===cameraToApply))&&<div className="orbital-layer" ref={spaceLayer} aria-hidden="true">
+      <Suspense fallback={null}><SpaceCanvas frame={size} transferRef={transferRef} layerRef={spaceLayer} readyRef={orbitalReady}/></Suspense>
+      <span className="orbital-credit">NASA Earth Observatory · Blue Marble</span>
     </div>}
     <div className="map-edge top-edge" /><div className="map-edge bottom-edge" />
     {measuring&&ready&&<div className="draw-overlay" onPointerDown={startMeasure} onPointerMove={extendMeasure} onPointerUp={finishMeasure}
@@ -480,7 +546,10 @@ export function MapStage({focus,date,cells,weekly,aoi,tool,onArea,onCirclePrevie
       <div className="legend-title"><Layers3 size={13}/> {weekly?'WEEKLY FRP SUM':'FIRE RADIATIVE POWER'} <InfoTip label="Fire radiative power" help={frpHelp+(weekly?' Pillars sum the daily FRP readings within each grid cell.':'')+' Taller pillars indicate higher FRP. The height scale compresses extremes so lower and moderate readings remain distinguishable.'}/></div>
       <div className="thermal-ramp" />
       <div className="legend-scale"><span>0</span><span>50</span><span>100</span><span>150+ MW</span></div>
-      <div className="legend-z"><span/><b>Z ≥ 1.5</b><span/><b>Z ≥ 2.5</b></div>
+      {(showDemoContours||aoi||selected)&&<div className="legend-boundaries">
+        {showDemoContours&&<div><i className="legend-demo-outline"/>Demo anomaly zones</div>}
+        {(aoi||selected)&&<div><i className="legend-area-outline"/>Selected area</div>}
+      </div>}
     </div>
     <div className="map-controls">
       <Button className="compass" aria-label="Reset bearing to true north" help="Rotate the map so true north points up." onClick={()=>changeCamera({bearing:0},450)}>
@@ -500,6 +569,12 @@ export function MapStage({focus,date,cells,weekly,aoi,tool,onArea,onCirclePrevie
       <span><b>LAT</b> {coord(camera.lat,'lat')}</span><span><b>LON</b> {coord(camera.lon,'lon')}</span>
       <span><b>ZOOM</b> {camera.zoom.toFixed(1)}</span><span><b>BRG</b> {String(bearing).padStart(3,'0')}° {cardinal}</span><span><b>PITCH</b> {Math.round(camera.pitch)}°</span>
     </div>
-    <div className="map-credit">{options.ecosystems&&<>GMC · Protected Planet · Harvard MAPA <span>· </span></>}{options.satellite?'NASA EOSDIS GIBS':'NASA Blue Marble · Natural Earth · geoBoundaries'}</div>
+    <div className="map-credit">
+      {options.ecosystems&&<div>GMC · Protected Planet · Harvard MAPA</div>}
+      {options.satellite?'NASA EOSDIS GIBS':camera.zoom>=4?<>
+        <div><a href="https://cloudless.eox.at/" target="_blank" rel="noreferrer">EOxCloudless</a> by EOX IT Services GmbH (Contains modified Copernicus Sentinel data 2016 &amp; 2017)</div>
+        {camera.zoom>=5&&<a href="https://mapterhorn.com/attribution/" target="_blank" rel="noreferrer">Mapterhorn elevation</a>}
+      </>:'NASA Blue Marble · Natural Earth · geoBoundaries'}
+    </div>
   </section>
 }
