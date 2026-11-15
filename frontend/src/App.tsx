@@ -1,3 +1,4 @@
+import { rankQuietMonths } from './seasonalHotspots'
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
 import { Activity, ArrowDown, ArrowDownToLine, ArrowUpRight, Bookmark, BookmarkPlus, Camera as CameraIcon, Circle, Clock3, CodeXml, Crosshair, Database, FileText, Focus as FocusIcon, Grid2X2, Layers3, Lasso, Leaf, MapPin, Puzzle as PuzzleIcon, Ruler, Search, SlidersHorizontal, Satellite, TriangleAlert, X, Zap } from 'lucide-react'
@@ -184,6 +185,9 @@ export function App() {
   const viirs=date>=(historical?snppArchiveStart:viirsStart)
   const actual=useHistorical(historical,historicalRequest(settings),date)
   const cells=useMemo(()=>historical?historicalCells(actual.rows??[],harmonized):demoCells,[historical,actual.rows,harmonized,demoCells])
+  const mappedDetections = useMemo(() => historical && actual.rows
+    ? cells.reduce((total, cell) => total + cell.weight, 0)
+    : null, [historical, actual.rows, cells])
 
 
   const observedDays=useMemo(()=>actual.days?.map(day=>({date:day.date,values:actualDay(day,pass)}))??[],[actual.days,pass])
@@ -217,6 +221,21 @@ export function App() {
       .reduce<string|undefined>((nearest,day)=>
         !nearest||Math.abs(Date.parse(day.date)-selected)<Math.abs(Date.parse(nearest)-selected)?day.date:nearest,undefined)
   },[actual.rows,date,from,historical,observedDays,to])
+  const quietMonths = useMemo(() => {
+    if (!historical) {
+      return rankQuietMonths(series.map((day, index) => ({
+        date: archiveDates[index], detections: day.rawCount,
+      })))
+    }
+    return rankQuietMonths((actual.days ?? []).map(day => {
+      const aqua = day.platforms.find(platform => platform.platform === 'aqua')
+      return {
+        date: day.date,
+        detections: aqua?.detection_count ?? null,
+        outsideRange: !aqua || aqua.coverage_status === 'outside_observed_range',
+      }
+    }))
+  }, [historical, actual.days, series])
   const historicalCalendar=useMemo(()=>{
     if(!historical)return undefined
     const byDate=new Map(observedDays.map(day=>[day.date,day.values]))
@@ -471,7 +490,7 @@ export function App() {
         <section className="filter-section calibration-controls">
           <h3><Layers3 size={14}/>Intercalibration</h3>
           <Segmented label="Intercalibration mode" value={harmonized?'harmonized':'raw'} onChange={value=>setSettings(current=>({...current,harmonized:value==='harmonized'}))}
-            items={[{value:'raw',label:<><Database size={13}/> Raw Satellite</>},{value:'harmonized',label:<>Harmonized <span className="algorithm-tag mono">E19</span></>}]}/>
+            items={[{value:'raw',label:<><Database size={13}/> Raw Satellite</>},{value:'harmonized',label:'Harmonized'}]}/>
         </section>
       </div>
     </>
@@ -529,6 +548,26 @@ export function App() {
             <div className="analysis-date mono"><span>{prettyDate(date)} <b>· DOY {String(doy(date)).padStart(3,'0')}</b></span>
               <span className={'severity '+(historical?'normal':severity)}><span/>{historical?(daily.rawCount!==null||daily.viirsCount!==null?'OBSERVED':actual.day?'COVERAGE UNKNOWN':'LOADING'):severity==='critical'?'CRITICAL ANOMALY':severity==='elevated'?'ELEVATED':'NOMINAL'}</span></div>
           </div>
+          <section className="analysis-card seasonal-hotspots" aria-labelledby="quiet-months-title">
+            <h4 id="quiet-months-title">Lowest-activity months</h4>
+            <div className="seasonal-hotspots-body">
+              <p className="seasonal-source">{historical ? 'Aqua MODIS' : 'Synthetic preview'} · Full archive · {pass === 'all' ? 'All passes' : pass === 'day' ? 'Day passes' : 'Night passes'}</p>
+              {quietMonths.length > 0 ? <>
+                <ol className="seasonal-months">
+                  {quietMonths.slice(0, 3).map(month => (
+                    <li key={month.month}>
+                      <strong>{month.month}</strong>
+                      <span className="seasonal-rate mono">{month.rate.toPrecision(3)} / day</span>
+                      <small>{month.years}/{month.eligibleYears} years with records</small>
+                    </li>
+                  ))}
+                </ol>
+                <p className="seasonal-note">Mean recorded detections per calendar day. Months with no records are excluded. Historical activity cannot establish current travel safety.</p>
+              </> : <p className="seasonal-note" role="status">
+                {actual.error ? 'Seasonal data unavailable.' : actual.days ? 'No comparable months with records.' : 'Loading the historical archive…'}
+              </p>}
+            </div>
+          </section>
           {historical&&actual.error&&<p className="sensor-note" role="alert">{actual.error} <Button onClick={actual.retry}>Retry</Button></p>}
           {historical&&!actual.days&&!actual.error&&<p className="sensor-note" role="status">Loading the 2000–2025 archive…</p>}
           {historical&&actual.rows?.length===0&&actual.days&&<p className="sensor-note">No detections in this area on {date} for the selected pass.
@@ -580,6 +619,10 @@ export function App() {
             </>}
           </section>
           <div className="kpis">
+            {historical && <section className="wide-kpi">
+              <span>Mapped satellite detections</span>
+              <strong className="mono">{display(mappedDetections)}{actual.complete === false ? ' (partial)' : ''}</strong>
+            </section>}
             <section><span><Grid2X2 size={13}/> Active fire cells</span><strong className="mono">{historical&&!actual.rows?'—':units(cells.length,'cells')}</strong></section>
             <section title={historical?'Requires time integration of FRP':undefined}><span><Zap size={13}/> Radiative energy</span><strong className="mono">{historical?'—':units(estimates.fre,'TJ')}</strong></section>
             <section className="wide-kpi" title={historical?'Requires a validated area estimate':'FRP ÷ [0.95 × σ × (800⁴ − 300⁴)], expressed in km²'}><span><FocusIcon size={13}/> Estimated fire area</span><strong className="mono">{historical?'—':units(estimates.area,'km²')}</strong></section>

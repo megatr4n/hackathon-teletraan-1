@@ -198,7 +198,7 @@ export function historicalCells(rows:CellRow[], harmonized:boolean):MapCell[] {
     const visual=modis.length?modis:group
     const value=(row:CellRow)=>row.frp_sum_mw===null?null:row.frp_sum_mw*(harmonized&&row.platform!=='snpp'&&row.pass!=='unknown'?calibration.dailyFrp[row.pass]:1)
     return {id,center:group[0].center,geometry:group[0].geometry,raw:nullableSum(visual.map(value)),
-      weight:visual.reduce((sum,row)=>sum+(row.detection_count??0),0),pass:visual.some(row=>row.pass==='day')?'day':'night'}
+      weight:group.reduce((sum,row)=>sum+(row.detection_count??0),0),pass:visual.some(row=>row.pass==='day')?'day':'night'}
   })
 }
 
