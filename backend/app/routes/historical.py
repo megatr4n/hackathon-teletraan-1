@@ -1,9 +1,11 @@
 """Version 2 API for exact queries over canonical FIRMS observations."""
 
 
+import csv
 import duckdb
 import h3
 import hashlib
+import io
 import json
 import logging
 import re
@@ -16,6 +18,7 @@ from datetime import UTC, date, datetime
 from datetime import timedelta
 from fastapi import APIRouter, HTTPException
 from fastapi import Query
+from fastapi.responses import StreamingResponse
 from functools import lru_cache
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from shapely.affinity import translate
@@ -254,7 +257,7 @@ def dataset():
         "quality_policies": ["canonical"], "spatial_modes": ["exact"],
         "capabilities": {
             "acquisition_coverage": False, "calibration": False, "z_score": True,
-            "forecast": False, "cells": True, "csv": False, "geojson": False,
+            "forecast": False, "cells": True, "csv": True, "geojson": False,
         },
         "limits": {"max_days": MAX_DAYS, "query_ttl_seconds": TTL.total_seconds(), "h3_resolution": [2, 8]},
     }
@@ -535,3 +538,35 @@ def cells(query_id: str, day: date,
     return {**selection.metadata(), "date": day, "resolution": resolution, "sensor": sensor, "square_km": size,
             "cells": list(cell_rows(records[:limit], day, size)), "complete": not more,
             "next_cursor": cursor_for(selection, day, layout, sensor, records[limit - 1]) if more else None}
+
+
+@router.get("/queries/{query_id}/export")
+def export(query_id: str, date: date, format: Literal["csv"] = "csv",
+           level: Literal["cells"] = "cells", resolution: int = Query(6, ge=MIN_RESOLUTION, le=MAX_RESOLUTION),
+           sensor: Sensor | None = None, square_km: Literal["3", "9", "24"] | None = Query(None)):
+    selection = get_selection(query_id, date)
+    size = int(square_km) if square_km else None
+    count_limit = 50_000
+    records = read_data(data.cell_records, selection.release, selection, date, resolution, ("", "", ""),
+                        count_limit + 1, sensor, size)
+    if len(records) > count_limit:
+        raise failure(413, "export_too_large", "Choose a lower H3 resolution or a smaller area")
+    metadata = {"dataset_release": selection.release.id, "quality_policy": selection.request.quality_policy,
+                "spatial_mode": selection.request.spatial_mode, "method_id": data.METHOD,
+                "grid": f"square_{square_km}km" if square_km else f"h3_{resolution}"}
+    headers = {"Content-Disposition": f'attachment; filename="teletraan-{date}.{format}"'}
+    def lines():
+        buffer = io.StringIO()
+        columns = ["cell_id", "date", "latitude", "longitude", "pass", "source_platform",
+                   *metrics(), "coverage_status", *metadata]
+        writer = csv.DictWriter(buffer, fieldnames=columns, extrasaction="ignore")
+        writer.writeheader()
+        yield buffer.getvalue()
+        for row in cell_rows(records, date, size):
+            buffer.seek(0)
+            buffer.truncate(0)
+            longitude, latitude = row["center"]
+            writer.writerow({**row, **metadata, "latitude": latitude, "longitude": longitude,
+                             "source_platform": row["platform"]})
+            yield buffer.getvalue()
+    return StreamingResponse(lines(), media_type="text/csv", headers=headers)
