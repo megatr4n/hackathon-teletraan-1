@@ -33,7 +33,8 @@ export function chernobylPinBounds(focus:Focus,aoi:Aoi|null):MapBounds|undefined
 const defaults:Pin[]=scenarios.map(focus=>{
   const aoi=focus.id==='chernobyl'?chernobylArea:null
   return {id:'demo-'+focus.id,name:focus.short,snapshot:{
-    ...initialSnapshot,focus,date:focus.date,aoi,areaMode:aoi?'custom':'countries',
+    ...initialSnapshot,focus,date:focus.date,from:focus.event.date_range[0],to:focus.event.date_range[1],
+    aoi,areaMode:aoi?'custom':'countries',
     camera:{...initialSnapshot.camera,lon:focus.center[0],lat:focus.center[1],zoom:focus.zoom},
   }}
 })
