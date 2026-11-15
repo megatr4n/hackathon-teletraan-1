@@ -13,7 +13,7 @@ export type Snapshot = {
 export type Pin = { id:string; name:string; snapshot:Snapshot }
 export const defaultOptions:MapOptions={grid:true,satellite:false,ecosystems:false}
 export const initialSnapshot:Snapshot={
-  focus:scenarios[0],region:null,date:scenarios[0].date,from:firstDate,to:lastDate,pass:'all',harmonized:true,
+  focus:scenarios[0],region:null,date:lastDate,from:firstDate,to:lastDate,pass:'all',harmonized:true,
   areaMode:'countries',aoi:null,radius:50,query:'',options:defaultOptions,
   camera:{lon:scenarios[0].center[0],lat:scenarios[0].center[1],zoom:scenarios[0].zoom,bearing:36,pitch:48},
   metric:'frp',calendarView:'grid',
