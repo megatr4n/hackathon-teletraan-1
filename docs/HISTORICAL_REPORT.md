@@ -90,7 +90,7 @@ From `frontend`:
 ```sh
 node tests/report-analysis.test.mjs
 npx tsc -b
-npm run build
+NODE_OPTIONS=--max-old-space-size=8192 npm run build
 node scripts/render-historical-report.mjs response.json report.pdf 'Actual area label'
 ```
 
@@ -114,3 +114,5 @@ These figures cover the full configured regional box. They must not be described
 - [NASA FIRMS VIIRS field definitions](https://firms.modaps.eosdis.nasa.gov/content/descriptions/FIRMS_VIIRS_Firehotspots.html)
 - Local release provenance: `docs/data-release/RELEASE.json`.
 - Project coefficients: `config/modis_viirs_coefficients.csv`.
+
+The full production build and TypeScript check passed. The production build needed an 8 GiB Node heap limit on the verification machine; this is a build-process setting, not an increase in browser memory use. Poppler rendering and text-bound checks covered all pages of the 10-page archive and 9-page monthly examples. Browser clicking/download UI was not automated; previews use the exact export renderer.
