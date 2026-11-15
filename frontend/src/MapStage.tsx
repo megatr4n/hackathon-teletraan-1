@@ -89,7 +89,7 @@ function mapStyle(): StyleSpecification {
     {id:'circle-preview-fill',type:'fill',source:'circlePreview',paint:{'fill-color':'#4ac7e8','fill-opacity':.08}},
     {id:'circle-preview-line',type:'line',source:'circlePreview',paint:{'line-color':'#65d7f3','line-width':1.35,'line-dasharray':[3,2]}},
     {id:'fire-footprint',type:'fill',source:'fires',paint:{'fill-color':['interpolate',['linear'],['get','power'],0,'#8c3626',35,'#e65c2b',140,'#ffa354'],'fill-opacity':.85}},
-    {id:'fire-centers',type:'circle',source:'fireCenters',maxzoom:8,paint:{'circle-radius':['interpolate',['linear'],['zoom'],2,1.3,5,2.1,8,2.5],'circle-color':'#fb883f','circle-opacity':.82}},
+    {id:'fire-centers',type:'circle',source:'fireCenters',maxzoom:8,paint:{'circle-radius':['interpolate',['linear'],['zoom'],2,['interpolate',['linear'],['get','detections'],1,1.3,25,3.6],5,['interpolate',['linear'],['get','detections'],1,2.1,25,5.4],8,['interpolate',['linear'],['get','detections'],1,2.5,25,6.5]],'circle-color':'#fb883f','circle-opacity':.82}},
     {id:'crosshair',type:'line',source:'target',paint:{'line-color':'#e69b61','line-width':1.15,'line-opacity':.75}},
   ]}
 }
@@ -284,7 +284,7 @@ export function MapStage({focus,date,cells,harmonized,aoi,tool,onArea,onCirclePr
       const item=cellPolygon(cell,.72)
       return {...item,properties:{...item.properties,power:cell.raw*(harmonized?calibration.dailyFrp[cell.pass]:1)}}
     })))
-    set('fireCenters',collection(historical?cells.map(cell=>({type:'Feature',properties:{},
+    set('fireCenters',collection(historical?cells.map(cell=>({type:'Feature',properties:{detections:cell.weight},
       geometry:{type:'Point',coordinates:cell.center}})):[]))
     const hazards = !historical && cells.length ? [hazardShape(focus.center,6,-1,64,40,1.5),hazardShape(focus.center,-12,13,24,13,2.5),hazardShape(focus.center,25,-12,31,16,2.5)] : []
     set('hazard',collection(hazards))

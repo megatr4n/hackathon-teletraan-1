@@ -215,7 +215,7 @@ export function Timeline({date,from,to,playing,onPlay,onSelect,series,historical
           <span className="timeline-date mono">{prettyDate(date)} <b>DOY {String(doy(date)).padStart(3,'0')}</b></span>
         </div>
         <div className="timeline-note">
-          {activity?.scale&&<CalendarScaleLegend scale={activity.scale} metric={metric}/>}
+          {view==='grid'&&activity?.scale&&<CalendarScaleLegend scale={activity.scale} metric={metric}/>}
           <p>{historical?
           historyReady?<><strong>{observedDayCount.toLocaleString('en-US')} / {periodDays.toLocaleString('en-US')} days with values.</strong>{' '}
             {metric==='z'?'Raw MODIS FRP, ±7 days in at least eight other years. Blue is below baseline.':
