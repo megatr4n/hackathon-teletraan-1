@@ -15,11 +15,11 @@ The report follows the selected area, not the extent of the map viewport. In par
 ## Count graph requested for the export
 
 - Raw MODIS = sum of available Terra and Aqua detection records on the UTC date. If neither is observed, the result is null. Overpasses are not deduplicated into unique fires.
-- Harmonized MODIS = raw MODIS multiplied by the existing `K_COUNT[pass]` in `config/modis_viirs_coefficients.csv`. It is labeled as a derived estimate. The adjustment creates no additional satellite observations.
+- Harmonized Aqua MODIS = raw Aqua MODIS multiplied by the existing `K_COUNT[pass]` in `config/modis_viirs_coefficients.csv`. This derived estimate is available from **2002-07-04** on days with Aqua records.
 - S-NPP VIIRS = observed VIIRS detection records, available from the archive boundary **2012-01-20**. No value is drawn before that boundary; gaps remain null. MODIS is never substituted into this series.
-- A period wholly before the boundary has two lines and a two-item legend. A later period has three. The raw and adjusted MODIS series continue after 2012 alongside VIIRS.
+- Before Aqua enters the archive, only raw Terra MODIS has values. From the Aqua archive start, the chart also shows the Aqua estimate. From the VIIRS archive start, the chart also shows observed VIIRS.
 - Up to 120 requested days: daily observations. Longer periods: calendar-month mean daily values, divided by each series' **own number of days with records**. Partial months are retained. The availability plot and evidence JSON carry the relevant denominators. No smoothing or invented zeros are used.
-- The monthly bin containing the archive boundary is placed at that boundary to avoid drawing VIIRS before its start. Other monthly bins are plotted at the midpoint of their requested dates.
+- The monthly bin containing an archive boundary is placed on or after that date. Other monthly bins are plotted at the midpoint of their requested dates.
 
 Configured count coefficients (unchanged by this implementation):
 
@@ -29,12 +29,12 @@ Configured count coefficients (unchanged by this implementation):
 | day | 4.9919362253313935 |
 | night | 18.82703433766624 |
 
-The all-pass coefficient matches the existing application. It is not a weighted sum of the separate day and night corrections. Exporting a report does not fit or validate new coefficients.
+The report multiplies the daily Aqua count by the coefficient for the selected pass. The two day/night factors are applied in their respective filtered reports.
 
 ## PDF contents
 
 1. Selection, UTC period, actual bounds, source release, manifest SHA-256 and query ID.
-2. Raw MODIS, adjusted MODIS and observed VIIRS detection series.
+2. Raw Terra + Aqua MODIS, adjusted Aqua MODIS and observed VIIRS detection series.
 3. Raw FRP in separate Aqua, S-NPP and Terra panels, with a shared vertical scale.
 4. Detection-record availability by platform and counts of missing FRP records.
 5. Period totals, valid and missing FRP records, means, median, 95th percentile, peaks and the selected day.
@@ -51,7 +51,7 @@ FRP is power in MW. Summing sampled FRP readings across overpasses or days does 
 
 Means and quantiles use valid observed daily values only. Quantiles interpolate linearly between sorted observations at index `(n - 1) * q`. Peaks use the maximum observed daily sum. Acquisition coverage is unavailable; reported record-day fractions are not acquisition completeness.
 
-Count comparison diagnostics include **only dates with both MODIS and VIIRS values**, using the same matched dates for raw and harmonized MODIS. For difference `e = MODIS - VIIRS`:
+Count comparison diagnostics include **only dates with both Aqua MODIS and VIIRS values**, using the same matched dates for raw Aqua and adjusted Aqua. Here `e` is the difference between the Aqua count (raw or adjusted) and VIIRS.
 
 - MAE = mean absolute difference in counts.
 - Mean difference = mean signed difference in counts.
@@ -75,7 +75,7 @@ Existing `day`, `period`, provenance and `methodology` fields are retained. Addi
 
 The selected day may lie outside the report subperiod, but must lie inside the parent query. PDF labels it separately. Missing bounds default to the parent query. Reversed/out-of-query bounds return HTTP 422. Both frontend and backend must be deployed for this export version; no migration or data regeneration is required.
 
-Evidence JSON uses `report_version: firms-evidence-v1`, the unchanged source response and deterministic derivations (count formula, selected and available coefficients, daily counts, chart bins, denominators and comparison statistics). It contains no access token or FIRMS API key.
+Evidence JSON uses `report_version: firms-evidence-v2`, the unchanged source response and deterministic derivations (count formula, selected and available coefficients, daily counts, chart bins, denominators and comparison statistics). It contains no access token or FIRMS API key.
 
 ## Verification and preview
 
@@ -96,7 +96,7 @@ node scripts/render-historical-report.mjs response.json report.pdf 'Actual area 
 
 The renderer uses the exact browser PDF builder and bundled font, producing a PDF and evidence JSON without a running browser or simulated data. A saved `/report-data` response is required. Render with Poppler for visual QA.
 
-Implementation checks include the 2012 boundary, all three orbital-pass coefficients, missing VIIRS without fallback, missing FRP with valid counts, partial months, observed-day denominators, matched-day diagnostics, malformed/stale payload rejection, and the API-to-Parquet report period contract.
+Implementation checks include the 2002 Aqua and 2012 VIIRS boundaries, Aqua-only use of all three orbital-pass coefficients, missing VIIRS without fallback, missing FRP with valid counts, partial months, observed-day denominators, matched-day diagnostics, malformed/stale payload rejection, and the API-to-Parquet report period contract.
 
 A real archive verification on the `ua-east` preset for April 2020 independently queried raw Parquet with DuckDB and matched all 90 platform/day records:
 
