@@ -17,6 +17,7 @@ import { useDailyPuzzle } from './useDailyPuzzle'
 import type { HistoricalReport } from './statisticalReport'
 import { historicalApi, historicalFetch, gridParams, historicalCells, historicalRequest, useHistorical, actualDay, historicalCalendarValue, scoreDetails, actualPeriod, snppArchiveStart } from './historical'
 import { snapshotFromUrl, updateViewUrl } from './viewLink'
+import { recordingSettings, useRecordingHistory } from './recordingDemo'
 
 import { cinematicTrack, tourRegions, type CameraCommand, type CameraDestination } from './cameraTour'
 function UtcClock() {
@@ -98,7 +99,11 @@ function SensorRow({label,value,unit,active}:{label:string;value:string;unit?:st
 }
 
 export function App() {
-  const [settings,setSettings]=useState(()=>snapshotFromUrl())
+  const [recordingMode]=useState(()=>new URLSearchParams(window.location.search).get('recording')==='1')
+  const [settings,setSettings]=useState(()=>{
+    const snapshot=snapshotFromUrl()
+    return recordingMode?recordingSettings(snapshot):snapshot
+  })
   const {focus,region,date,from,to,pass,harmonized,areaMode,aoi,radius,query,options,metric,calendarView}=settings
   const camera=useRef(settings.camera)
   const [command,setCommand]=useState<CameraCommand|null>(()=>settings===initialSnapshot?null:{camera:settings.camera,duration:0})
@@ -132,13 +137,14 @@ export function App() {
   const [ecoregions,setEcoregions]=useState(emptyRegions)
   const [geographyError,setGeographyError]=useState('')
   const adminCountry=areaMode==='countries'?region?.country:undefined
+  const visiblePins=recordingMode?pins.filter(pin=>!pin.snapshot.region&&!pin.snapshot.aoi&&tourRegions.some(entry=>entry.id===pin.snapshot.focus.id)):pins
 
   useEffect(()=>{
     let active=true
     geography<RegionCollection>('countries').then(value=>{if(active)setCountries(value)}).catch(()=>{if(active)setGeographyError('Country boundaries unavailable')})
-    geography<Region[]>('admin-index').then(value=>{if(active)setAdminIndex(value)}).catch(()=>{if(active)setGeographyError('Administrative search unavailable')})
+    if(!recordingMode)geography<Region[]>('admin-index').then(value=>{if(active)setAdminIndex(value)}).catch(()=>{if(active)setGeographyError('Administrative search unavailable')})
     return ()=>{active=false}
-  },[])
+  },[recordingMode])
   useEffect(()=>{
     setAdmins(emptyRegions)
     if(!adminCountry||!adminIndex.some(entry=>entry.country===adminCountry))return
@@ -190,9 +196,12 @@ export function App() {
   useEffect(()=>{
     if(!game.open&&!orbiting)updateViewUrl(settings)
   },[game.open,orbiting,settings])
-  const historical=historicalApi!==undefined&&!game.open
+  const historical=recordingMode||(historicalApi!==undefined&&!game.open)
   const viirs=date>=(historical?snppArchiveStart:viirsStart)
-  const actual=useHistorical(historical,historicalRequest(settings),date)
+  const request=historicalRequest(settings)
+  const recording=useRecordingHistory(recordingMode,pass)
+  const prepared=recording.history?.get(request)
+  const actual=useHistorical(historical&&(!recordingMode||Boolean(prepared)),request,date,prepared)
   const cells=useMemo(()=>{
     if(historical)return historicalCells(actual.rows??[],date,harmonized)
     if(!viirs)return demoCells
@@ -310,10 +319,19 @@ export function App() {
     setCommand({camera:{lon:next.center[0],lat:next.center[1],zoom:next.zoom},duration:880})
   }
   function selectMapRegion(feature:RegionFeature,point?:Coord) {
+    if(recordingMode)return
     const target=feature.properties
     if(target.kind==='country'&&region?.id===target.id)return
     const entry=target.kind==='country'?countryList.find(item=>item.id===target.id&&item.kind==='country')??target:target
     chooseRegion(entry,entry.kind==='eco'?point:undefined)
+  }
+  function selectRecordingRegion(id:string) {
+    const next=tourRegions.find(entry=>entry.id===id)
+    if(!next||next===focus)return
+    stopTour(false)
+    setPlaying(false)
+    setSettings(current=>({...current,focus:next,date:clampDate(next.date,current.from,current.to)}))
+    setCommand({camera:{lon:next.center[0],lat:next.center[1],zoom:next.zoom},duration:880})
   }
   function changeAreaMode(next:AreaMode) {
     stopTour(false)
@@ -376,6 +394,7 @@ export function App() {
   }
   function orbit(short=false) {
     if(orbiting){stopTour(true);return}
+    if(recordingMode&&!recording.history)return
     setHasSelectedDay(false)
     setMeasuring(false);setTool(null);setPlaying(false)
     const stops=tourRegions.map(entry=>({
@@ -401,7 +420,7 @@ export function App() {
   function restorePin(pin:Pin) {
     stopTour(false)
     setHasSelectedDay(true)
-    const snapshot=pin.snapshot
+    const snapshot=recordingMode?recordingSettings(pin.snapshot):pin.snapshot
     const restoredFocus=snapshot.region?.kind==='country'?{...snapshot.focus,area:'Country or territory'}:snapshot.focus
     setTool(null);setMeasuring(false);setOrbiting(false);setPlaying(false);setPinMenu(false)
     navigateTo(snapshot.camera,()=>setSettings({...snapshot,focus:restoredFocus}),true,0)
@@ -476,7 +495,12 @@ export function App() {
       <div className="panel-header"><span className="section-icon"><SlidersHorizontal size={16}/></span><h2>Query filters</h2></div>
       <div className="query-filter-sections">
         <section className="filter-section">
-          <h3><FocusIcon size={14}/>Area of interest <InfoTip label="Area of interest" help="Choose the country, administrative region, ecoregion, or custom area used to filter observations."/></h3>
+          <h3><FocusIcon size={14}/>Area of interest {!recordingMode&&<InfoTip label="Area of interest" help="Choose the country, administrative region, ecoregion, or custom area used to filter observations."/>}</h3>
+          {recordingMode?<label className="admin-field">
+            <span>Recording region</span><select value={focus.id} onChange={event=>selectRecordingRegion(event.target.value)}>
+              {tourRegions.map(entry=><option key={entry.id} value={entry.id}>{entry.short}</option>)}
+            </select>
+          </label>:<>
           <Segmented label="Area of interest" value={areaMode} onChange={changeAreaMode} className="area-mode"
             items={[{value:'countries',label:'Countries'},{value:'ecoregions',label:'Eco-regions'},{value:'custom',label:'Custom Area'}]}/>
           <RegionSearch key={areaMode} query={query} mode={areaMode} options={displayOptions} onQuery={value=>setSettings(current=>({...current,query:value}))} onChoose={next=>chooseRegion(next,undefined,true)}/>
@@ -505,6 +529,7 @@ export function App() {
               {aoi&&<Button onClick={()=>setSettings(current=>({...current,aoi:null}))}><X size={13}/> Clear Area</Button>}
             </div>
           </div>}
+          </>}
         </section>
         <section className="filter-section orbital-filters">
           <h3>Orbital pass <InfoTip label="Orbital pass" help="Filter detections by whether the satellite observed the area during a daytime or nighttime pass."/></h3>
@@ -536,11 +561,11 @@ export function App() {
         <div className="brand-copy"><h1>TELETRAAN-1</h1><div className="mono">WILDFIRE MISSION CONTROL</div></div>
       </div>
         <div className="header-tools">
-          <Button className="tool-button orbit-trigger" helpDelay={500} help="Start or stop a camera tour of the showcase regions." aria-label="3D Orbit Tour / Fly-Around" aria-pressed={orbiting&&!tour.current?.short} onClick={()=>orbit()}><CameraIcon size={15}/><span>{orbiting&&!tour.current?.short?"Tour "+tourStop+"/"+tour.current?.stops.length:"3D Orbit Tour"}</span></Button>
-          <Button className="tool-button" helpDelay={500} help="Fly over the four showcase regions in about ten seconds." aria-label="Demo flight over all four regions" aria-pressed={orbiting&&tour.current?.short===true} onClick={()=>orbit(true)}><Film size={15}/><span>{orbiting&&tour.current?.short?"Flight "+tourStop+"/"+tour.current.stops.length:"Demo flight"}</span></Button>
-          <PuzzleDropdown game={game} onRegion={goToPuzzleRegion} trigger={id=><Button className="tool-button puzzle-trigger" aria-label="Daily Puzzle"
+          <Button className="tool-button orbit-trigger" helpDelay={500} help="Start or stop a camera tour of the showcase regions." aria-label="3D Orbit Tour / Fly-Around" disabled={recordingMode&&!recording.history&&!orbiting} aria-pressed={orbiting&&!tour.current?.short} onClick={()=>orbit()}><CameraIcon size={15}/><span>{orbiting&&!tour.current?.short?"Tour "+tourStop+"/"+tour.current?.stops.length:"3D Orbit Tour"}</span></Button>
+          <Button className="tool-button" helpDelay={500} help="Fly over the four showcase regions in about ten seconds." aria-label="Demo flight over all four regions" disabled={recordingMode&&!recording.history&&!orbiting} aria-pressed={orbiting&&tour.current?.short===true} onClick={()=>orbit(true)}><Film size={15}/><span>{orbiting&&tour.current?.short?"Flight "+tourStop+"/"+tour.current.stops.length:"Demo flight"}</span></Button>
+          {!recordingMode&&<PuzzleDropdown game={game} onRegion={goToPuzzleRegion} trigger={id=><Button className="tool-button puzzle-trigger" aria-label="Daily Puzzle"
             aria-expanded={game.open} aria-controls={game.open?id:undefined} data-solved={game.solved}
-            helpDelay={500} help="Open the daily challenge and find the fire activity that matches its clues." onClick={game.toggle}><PuzzleIcon size={15}/><span>Daily Puzzle</span></Button>}/>
+            helpDelay={500} help="Open the daily challenge and find the fire activity that matches its clues." onClick={game.toggle}><PuzzleIcon size={15}/><span>Daily Puzzle</span></Button>}/>}
           <Button className="tool-button ecosystem-button" helpDelay={500} help="Show or hide peatlands, protected areas, and the Chornobyl Exclusion Zone on the map." aria-label="Peatlands & Protected Areas Overlay" aria-pressed={options.ecosystems}
             onClick={()=>setSettings(current=>({...current,options:{...current.options,ecosystems:!current.options.ecosystems}}))}><Leaf size={15}/><span>Peatlands &amp; Protected Areas</span></Button>
           <Button className="tool-button" helpDelay={500} help="Activate the ruler, then drag between two points on the map to measure the distance." aria-label="Ruler" aria-pressed={measuring} onClick={()=>{setTool(null);setMeasuring(value=>!value)}}><Ruler size={15}/><span>Ruler</span></Button>
@@ -550,7 +575,7 @@ export function App() {
           <div className="pin-dock" ref={pinDock}>
             <Button className="tool-button" helpDelay={500} help="Open your saved views and the built-in scenarios." aria-label="Open saved pins" aria-expanded={pinMenu} onClick={()=>setPinMenu(value=>!value)}><Bookmark size={15}/><span>Pins</span></Button>
             {pinMenu&&<div className="pin-list" aria-label="Saved pins">
-              {pins.length?pins.map(pin=><div className="pin-row" key={pin.id}>
+              {visiblePins.length?visiblePins.map(pin=><div className="pin-row" key={pin.id}>
                 <button type="button" onClick={()=>restorePin(pin)}>{pin.name}</button>
                 <button type="button" className="pin-delete" aria-label={'Delete pin '+pin.name} title={'Delete '+pin.name} onClick={()=>deletePin(pin.id)}><X size={14}/></button>
               </div>):<p>No saved pins</p>}
@@ -614,8 +639,8 @@ export function App() {
               </p>}
             </div>
           </section>
-          {historical&&actual.error&&<p className="sensor-note" role="alert">{actual.error} <Button onClick={actual.retry}>Retry</Button></p>}
-          {historical&&!actual.days&&!actual.error&&<p className="sensor-note" role="status">Loading the 2000–2025 archive…</p>}
+          {(recording.error||actual.error)&&historical&&<p className="sensor-note" role="alert">{recording.error||actual.error} <Button onClick={()=>{actual.retry();if(recordingMode)recording.retry()}}>Retry</Button></p>}
+          {historical&&!actual.days&&!actual.error&&!recording.error&&<p className="sensor-note" role="status">{recordingMode?'Preparing four calendars and flight dates…':'Loading the 2000–2025 archive…'}</p>}
           {historical&&actual.rows?.length===0&&actual.days&&<p className="sensor-note">No detections in this area on {date} for the selected pass.
             {nearestObserved&&<> <Button onClick={()=>selectDate(nearestObserved,true)}>Go to {nearestObserved}</Button></>}
           </p>}
