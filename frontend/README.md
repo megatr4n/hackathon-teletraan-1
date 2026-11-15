@@ -47,6 +47,8 @@ Methods: [NASA JPL MASTER FRP ATBD](https://masterprojects.jpl.nasa.gov/download
 
 The E21 registry in `../config/coefficients.json` records the numeric coefficients and scope from the verified research archive. Its daily FRP candidates require Aqua source features for an exact, screened research bounding box in 2012–2025. Its count model targets full UTC months of filtered records. The spatial model requires matched observation pairs. The weekly calendar and grid use the existing prototype calibration, with sensor selection performed per day.
 
+Historical FRP uses recorded MODIS before the S-NPP archive starts. The prototype adjustment applies to Aqua FRP from known day and night passes. Recorded Terra and unknown-pass FRP are retained. After the transition, the calendar and FRP pillars choose S-NPP for a day with a reported FRP value. Otherwise they use the MODIS estimate. Period FRP sums use the same per-day calculation. The FRP calendar tooltip shows both modes and their difference on the shared scale.
+
 ## Geographic data
 
 - [Natural Earth](https://www.naturalearthdata.com/) for countries, administrative units, hydrography and selected protected areas. [geoBoundaries](https://www.geoboundaries.org/) supplies Ukraine's country and administrative boundaries, including Crimea.

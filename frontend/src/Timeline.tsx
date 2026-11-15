@@ -50,6 +50,17 @@ function MetricPicker({metric,onMetric}:{metric:Metric;onMetric:(metric:Metric)=
 }
 
 type WeekReading=ReturnType<typeof summarizeWeek>
+type FrpComparison={raw:number|null;adjusted:number|null}
+
+function readWeek(values:(number|null)[],range:{from:string;to:string},peak=false){
+  return summarizeWeek(range.from<=range.to?
+    values.slice(dateIndex(range.from,firstDate),dateIndex(range.to,firstDate)+1):[],peak)
+}
+
+function frpDifference(comparison:FrpComparison|undefined){
+  if(!comparison||comparison.raw===null||comparison.adjusted===null)return null
+  return comparison.adjusted-comparison.raw
+}
 
 function paint(value:number|null,heat:number,metric:Metric,historical:boolean) {
   const index=Math.min(7,Math.floor(heat*8))
@@ -59,18 +70,23 @@ function paint(value:number|null,heat:number,metric:Metric,historical:boolean) {
   return metric==='frp'?frpActivityColor(heat):activityColors[index]
 }
 
-function weekLabel(range:{from:string;to:string},reading:WeekReading,metric:Metric) {
+function weekLabel(range:{from:string;to:string},reading:WeekReading,metric:Metric,comparison?:FrpComparison) {
   const name=metric==='z'?'Peak daily Z-score':metric==='count'?'Hotspot sum':'FRP sum'
   const unit=metric==='count'?' hotspots':metric==='frp'?' MW':''
   const value=reading.value===null?'No observed value':formatBand(reading.value)+unit
-  return range.from+' – '+range.to+' · '+name+' · '+value+' · '+reading.observed+'/'+reading.days+' days with values'
+  const summary=range.from+' – '+range.to+' · '+name+' · '+value+' · '+reading.observed+'/'+reading.days+' days with values'
+  const delta=frpDifference(comparison)
+  if(!comparison||delta===null||comparison.raw===null||comparison.adjusted===null)return summary
+  const change=comparison.raw>0?(100*delta/comparison.raw).toFixed(1)+'%':formatBand(delta)+' MW'
+  return summary+' · Raw '+formatBand(comparison.raw)+' MW · Harmonized '+formatBand(comparison.adjusted)+' MW · Δ '+(delta>0?'+':'')+change
 }
 
 const formatBand=(amount:number)=>amount.toLocaleString('en-US',{maximumFractionDigits:2})
 
-function CalendarScaleLegend({scale,metric}:{scale:NonNullable<ReturnType<typeof calendarActivityScale>>;metric:Metric}) {
+function CalendarScaleLegend({scale,metric,harmonized}:{scale:NonNullable<ReturnType<typeof calendarActivityScale>>;metric:Metric;harmonized:boolean}) {
   const unit=metric==='count'?'hotspots':'MW'
   return <div className="calendar-scale" role="group" aria-label={'Shared calendar color scale in '+unit}>
+    <strong className="calendar-scale-mode">{harmonized?'Harmonized':'Raw Satellite'}</strong>
     <span className="calendar-scale-key" title="No observation"><i style={{background:missingActivityColor}}/>∅</span>
     <span className="calendar-scale-key" title="Observed zero"><i style={{background:noActivityColor}}/>0</span>
     <div className="calendar-scale-ramp">
@@ -187,11 +203,12 @@ export function Timeline({date,daySelected,puzzleMode,from,to,playing,onPlay,onD
     const deviation=Math.sqrt(powers.reduce((sum,power)=>sum+(power-mean)**2,0)/powers.length)||1
     return powers.map(power=>(power-mean)/deviation)
   },[series,activity,harmonized,historicalDays,puzzleMode])
-  const weekly=useMemo(()=>calendarWeeks.map(week=>{
+  const weekly=useMemo(()=>calendarWeeks.map(week=>readWeek(values,weekRange(week,from,to),metric==='z')),
+    [from,to,metric,values])
+  const frpComparisons=useMemo(()=>metric==='frp'&&activity?calendarWeeks.map(week=>{
     const range=weekRange(week,from,to)
-    const readings=range.from<=range.to?values.slice(dateIndex(range.from,firstDate),dateIndex(range.to,firstDate)+1):[]
-    return summarizeWeek(readings,metric==='z')
-  }),[from,to,metric,values])
+    return {raw:readWeek(activity.raw,range).value,adjusted:readWeek(activity.adjusted,range).value}
+  }):undefined,[activity,from,to,metric])
   const zCeiling=useMemo(()=>{
     if(metric!=='z')return 1
     const magnitudes=values.flatMap(value=>value===null?[]:[Math.abs(value)]).sort((a,b)=>a-b)
@@ -223,10 +240,13 @@ export function Timeline({date,daySelected,puzzleMode,from,to,playing,onPlay,onD
           <span className="timeline-date mono">{daySelected?prettyDate(date):selection.from+' – '+selection.to}</span>
         </div>
         <div className="timeline-note">
-          {view==='grid'&&activity?.weekScale&&<CalendarScaleLegend scale={activity.weekScale} metric={metric}/>}
+          {view==='grid'&&activity?.weekScale&&<CalendarScaleLegend scale={activity.weekScale} metric={metric} harmonized={harmonized}/>}
           <p>{historical&&!historyReady?'Loading archive values…':metric==='z'?
             'Each week shows the daily Z-score farthest from zero. Blue is below baseline.':
             'Monday–Sunday totals. Hover for coverage, or open a week to select a day.'}</p>
+          {metric==='frp'&&view==='grid'&&harmonized&&<div className="frp-adjustment-key">
+            <span>Blue edge · lower FRP</span><span>Amber edge · higher FRP</span>
+          </div>}
         </div>
       </div>
       <div className="timeline-view">
@@ -237,7 +257,7 @@ export function Timeline({date,daySelected,puzzleMode,from,to,playing,onPlay,onD
     </div>
     {shownWeek&&overlap!==collapsedCalendar&&<section ref={details} className="week-details" role="dialog" aria-label="Week details">
       <div className="week-details-header">
-        <strong>{weekLabel(rangeFor(shownWeek),weekly[shownWeek.index],metric)}</strong>
+        <strong>{weekLabel(rangeFor(shownWeek),weekly[shownWeek.index],metric,frpComparisons?.[shownWeek.index])}</strong>
         <Button aria-label="Close week" onClick={closeWeek}><X size={14}/></Button>
       </div>
       <div className="week-days">
@@ -277,8 +297,12 @@ export function Timeline({date,daySelected,puzzleMode,from,to,playing,onPlay,onD
           {weeks.map((week,column)=>{
             const reading=weekly[week.index]
             const disabled=week.index<min||week.index>max
-            const title=disabled?week.from+' – '+week.to+' · Outside selected dates':weekLabel(rangeFor(week),reading,metric)
-            return <button type="button" className="calendar-week" key={week.index} data-week={week.from}
+            const comparison=frpComparisons?.[week.index]
+            const delta=frpDifference(comparison)
+            const adjustment=harmonized&&view==='grid'&&!disabled&&delta!==null&&Math.abs(delta)>=.005?
+              (delta<0?'lower':'higher'):undefined
+            const title=disabled?week.from+' – '+week.to+' · Outside selected dates':weekLabel(rangeFor(week),reading,metric,comparison)
+            return <button type="button" className="calendar-week" key={week.index} data-week={week.from} data-frp-adjustment={adjustment}
               disabled={disabled} aria-label={title} title={title}
               aria-pressed={value===week.index} aria-haspopup="dialog" aria-expanded={shownWeek?.index===week.index}
               style={{gridColumn:column+2,backgroundColor:view==='grid'?paint(reading.value,getHeat(reading.value,true),metric,historical):undefined}}
