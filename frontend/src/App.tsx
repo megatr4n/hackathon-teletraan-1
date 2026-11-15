@@ -2,7 +2,7 @@ import { startTransition, useEffect, useId, useMemo, useRef, useState, type Form
 import { rankQuietMonths } from './seasonalHotspots'
 import * as Dialog from '@radix-ui/react-dialog'
 import { Activity, ArrowDown, ArrowDownToLine, ArrowUpRight, Bookmark, BookmarkPlus, Camera as CameraIcon, Circle, ChevronLeft, ChevronRight, Clock3, CodeXml, Crosshair, Database, FileText, Film, Focus as FocusIcon, Grid2X2, Layers3, Lasso, Leaf, MapPin, Ruler, Search, SlidersHorizontal, Satellite, TriangleAlert, X, Zap } from 'lucide-react'
-import { areaPolygon, cellPolygon, clampDate, doy, firstDate, maxCircleRadius, number, prettyDate, territories, type Aoi, type Cell, type Coord } from './data'
+import { areaPolygon, californiaOverviewBounds, cellPolygon, clampDate, doy, firstDate, maxCircleRadius, number, prettyDate, territories, type Aoi, type Cell, type Coord, type MapBounds } from './data'
 import { calibration, calibrationAccuracy, researchCalibration } from './calibration'
 import { cellObservations, dailyEstimates, dailyStats, dateIndex, periodStats, viirsStart } from './estimates'
 import { calendarWeeks, datesInRange, nextWeekDate, sumMapCells, summarizeWeek, weekIndex, weekRange } from './calendarWeeks'
@@ -99,7 +99,10 @@ export function App() {
   const [settings,setSettings]=useState(()=>snapshotFromUrl())
   const {focus,region,date,from,to,pass,harmonized,areaMode,aoi,radius,query,options,metric,calendarView}=settings
   const camera=useRef(settings.camera)
-  const [command,setCommand]=useState<CameraCommand|null>(()=>settings===initialSnapshot?null:{camera:settings.camera,duration:0})
+  const [command,setCommand]=useState<CameraCommand|null>(()=>settings===initialSnapshot?null:{
+    camera:settings.camera,duration:0,
+    bounds:focus.id==='california'&&!region&&!aoi?californiaOverviewBounds:undefined,
+  })
   const [filtersOpen,setFiltersOpen]=useState(()=>!window.matchMedia(narrowWorkbench).matches)
   const [analyticsOpen,setAnalyticsOpen]=useState(()=>!window.matchMedia(narrowWorkbench).matches)
   useEffect(()=>{
@@ -299,13 +302,13 @@ export function App() {
     return ()=>clearTimeout(timer)
   },[message])
 
-  function navigateTo(target:CameraDestination,apply:()=>void,globe:boolean,duration:number) {
+  function navigateTo(target:CameraDestination,apply:()=>void,globe:boolean,duration:number,bounds?:MapBounds) {
     if(globe&&!window.matchMedia('(prefers-reduced-motion: reduce)').matches){
-      setCommand({globe:target,startedAt:performance.now()})
+      setCommand({globe:target,startedAt:performance.now(),bounds})
       startTransition(apply)
     }else{
       apply()
-      setCommand({camera:target,duration:globe?0:duration})
+      setCommand({camera:target,duration:globe?0:duration,bounds})
     }
   }
 
@@ -410,7 +413,8 @@ export function App() {
     const snapshot=pin.snapshot
     const restoredFocus=snapshot.region?.kind==='country'?{...snapshot.focus,area:'Country or territory'}:snapshot.focus
     setTool(null);setMeasuring(false);setOrbiting(false);setPlaying(false);setPinMenu(false)
-    navigateTo(snapshot.camera,()=>setSettings({...snapshot,focus:restoredFocus}),true,0)
+    const bounds=pin.id==='demo-california'&&!snapshot.region&&!snapshot.aoi?californiaOverviewBounds:undefined
+    navigateTo(snapshot.camera,()=>setSettings({...snapshot,focus:restoredFocus}),true,0,bounds)
     setMessage('Opened '+pin.name)
   }
   async function exportReport() {

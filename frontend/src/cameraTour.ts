@@ -1,10 +1,11 @@
-import { distance, scenarios, type Coord, type Focus, type MapCell } from './data'
+import { distance, scenarios, type Coord, type Focus, type MapBounds, type MapCell } from './data'
 import { pillarHeightMeters } from './pillars'
 import type { Camera } from './pins'
 
 export type Shot = { to:Camera; ms:number; focusOnHotspots?:boolean }
 type CameraTrack = { focus:Focus; arrival:Camera; moon:boolean; short:boolean; stop:number }
-export type CameraCommand = { camera:Partial<Camera>; duration:number } | { track:CameraTrack } | { globe:CameraDestination; startedAt:number }
+export type CameraCommand = { camera:Partial<Camera>; duration:number; bounds?:MapBounds } | { track:CameraTrack } |
+  { globe:CameraDestination; startedAt:number; bounds?:MapBounds }
 export type CameraDestination = Pick<Camera,'lon'|'lat'|'zoom'> & Partial<Camera>
 
 const smooth=(t:number)=>t*t*(3-2*t)

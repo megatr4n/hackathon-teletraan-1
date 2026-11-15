@@ -15,6 +15,9 @@ export type Focus = {
 
 const configuredRegions = (parse(regionCatalog) as {regions:PresetRegion[]}).regions
 
+export type MapBounds = PresetRegion['bbox']
+export const californiaOverviewBounds=configuredRegions.find(region=>region.id==='us-west')?.bbox
+
 function demoScenario(id:string,presetId:string,name:string,short:string,area:string,country:string,
   telemetry:Pick<Focus,'raw'|'harmonized'|'median'|'count'|'fre'|'rank'|'percentile'|'code'>):Focus {
   const preset=configuredRegions.find(region=>region.id===presetId)

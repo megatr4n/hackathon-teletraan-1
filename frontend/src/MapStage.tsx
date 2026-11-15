@@ -231,10 +231,17 @@ export function MapStage({focus,date,cells,loadingCells,weekly,aoi,tool,onArea,o
         commandedCamera.current=camera
         setKeplerCamera(camera)
       }
-      const destination='globe' in request?{...origin,...request.globe}:null
+      const bounds='bounds' in request?request.bounds:undefined
+      const canvas=instance.getCanvas()
+      const padding=Math.min(48,Math.floor(Math.min(canvas.clientWidth,canvas.clientHeight)/8))
+      const fitted=bounds?instance.cameraForBounds(bounds,{padding,bearing:0}):undefined
+      const fittedCenter=fitted?.center?maplibregl.LngLat.convert(fitted.center):undefined
+      const fittedCamera=fittedCenter&&fitted?.zoom!==undefined?
+        {lon:fittedCenter.lng,lat:fittedCenter.lat,zoom:fitted.zoom,bearing:0,pitch:0}:undefined
+      const destination='globe' in request?{...origin,...request.globe,...fittedCamera}:null
       if(destination)setSpaceCommand(request)
       const arrival=destination??track?.arrival??null
-      let shots:Shot[]|null='camera' in request?[{to:{...origin,...request.camera},ms:request.duration}]:null
+      let shots:Shot[]|null='camera' in request?[{to:{...origin,...request.camera,...fittedCamera},ms:request.duration}]:null
       let startTime:number|undefined
       let waitForGlobeFrom:number|undefined
       let regionalStartTime:number|undefined
