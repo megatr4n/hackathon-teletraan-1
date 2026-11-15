@@ -100,25 +100,14 @@ export function Timeline({date,from,to,playing,onPlay,onSelect,series,historical
     const pane=panel.current?.parentElement
     const workbench=panel.current?.previousElementSibling
     if(!workbench)return
-    const filters=workbench.querySelector<HTMLElement>('#query-filters')
-    const heading=filters?.querySelector('.panel-header')
-    const sections=filters?.querySelector('.query-filter-sections')
-    const rows=Array.from(sections?.children??[])
     const observer=new ResizeObserver(()=>{
-      let minimum=245
-      if(filters&&!filters.hidden&&heading&&sections){
-        const spacing=getComputedStyle(sections)
-        const contentHeight=rows.reduce((height,row)=>height+row.getBoundingClientRect().height,0)
-        const gaps=parseFloat(spacing.rowGap)*(rows.length-1)
-        const padding=parseFloat(spacing.paddingTop)+parseFloat(spacing.paddingBottom)
-        minimum=Math.max(minimum,Math.ceil(heading.getBoundingClientRect().height+contentHeight+gaps+padding))
-      }
       const extension=Math.max(0,-(parseFloat(pane?.style.getPropertyValue('--calendar-overlap')??'')||0))
-      const max=Math.max(0,Math.min(480,workbench.clientHeight-extension-minimum))
+      // The calendar can cover the side panels while the map keeps a usable viewport.
+      const max=Math.max(0,Math.min(480,workbench.clientHeight-extension-245))
       setLimit(max)
       setOverlap(current=>Math.min(current,max))
     })
-    for(const element of [workbench,filters,heading,...rows])if(element)observer.observe(element)
+    observer.observe(workbench)
     return ()=>observer.disconnect()
   },[])
   useLayoutEffect(()=>{
