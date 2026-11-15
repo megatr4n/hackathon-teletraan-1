@@ -107,8 +107,8 @@ function CalendarScaleLegend({scale,metric,harmonized}:{scale:NonNullable<Return
   </div>
 }
 
-export function Timeline({date,daySelected,puzzleMode,from,to,playing,onPlay,onDay,onWeek,series,historicalCalendar,historyReady,harmonized,onRange,metric,view,onMetric,onView}:{
-  date:string;daySelected:boolean;puzzleMode:boolean;from:string;to:string;playing:boolean;onPlay:()=>void;onDay:(date:string)=>void;onWeek:(date:string)=>void;
+export function Timeline({date,daySelected,from,to,playing,onPlay,onDay,onWeek,series,historicalCalendar,historyReady,harmonized,onRange,metric,view,onMetric,onView}:{
+  date:string;daySelected:boolean;from:string;to:string;playing:boolean;onPlay:()=>void;onDay:(date:string)=>void;onWeek:(date:string)=>void;
   series:DailyStats[];harmonized:boolean;onRange:(from:string,to:string)=>void;metric:Metric;view:CalendarView;
   onMetric:(metric:Metric)=>void;onView:(view:CalendarView)=>void
   historicalCalendar?:HistoricalCalendar
@@ -186,7 +186,7 @@ export function Timeline({date,daySelected,puzzleMode,from,to,playing,onPlay,onD
   const activity=useMemo(()=>{
     if(metric==='z')return undefined
     const count=metric==='count'
-    const demoValues=(adjusted:boolean)=>series.map((day,index)=>!puzzleMode&&archiveDates[index]>=viirsStart?
+    const demoValues=(adjusted:boolean)=>series.map((day,index)=>archiveDates[index]>=viirsStart?
       (count?day.viirsCount:day.viirs):adjusted?(count?day.correctedCount:day.corrected):(count?day.rawCount:day.raw))
     const raw=historicalCalendar?.raw.map(day=>day.value)??demoValues(false)
     const adjusted=historicalCalendar?.harmonized.map(day=>day.value)??demoValues(true)
@@ -194,15 +194,15 @@ export function Timeline({date,daySelected,puzzleMode,from,to,playing,onPlay,onD
       values.slice(dateIndex(week.from,firstDate),dateIndex(week.to,firstDate)+1),false).value)
     return {raw,adjusted,dayScale:calendarActivityScale(raw,adjusted,metric),
       weekScale:calendarActivityScale(totals(raw),totals(adjusted),metric,true)}
-  },[series,metric,historicalCalendar,puzzleMode])
+  },[series,metric,historicalCalendar])
   const values=useMemo(()=>{
     if(activity)return harmonized?activity.adjusted:activity.raw
     if(historicalDays)return historicalDays.map(day=>day.value)
-    const powers=series.map((day,index)=>!puzzleMode&&archiveDates[index]>=viirsStart?day.viirs:harmonized?day.corrected:day.raw)
+    const powers=series.map((day,index)=>archiveDates[index]>=viirsStart?day.viirs:harmonized?day.corrected:day.raw)
     const mean=powers.reduce((a,b)=>a+b,0)/powers.length
     const deviation=Math.sqrt(powers.reduce((sum,power)=>sum+(power-mean)**2,0)/powers.length)||1
     return powers.map(power=>(power-mean)/deviation)
-  },[series,activity,harmonized,historicalDays,puzzleMode])
+  },[series,activity,harmonized,historicalDays])
   const weekly=useMemo(()=>calendarWeeks.map(week=>readWeek(values,weekRange(week,from,to),metric==='z')),
     [from,to,metric,values])
   const frpComparisons=useMemo(()=>metric==='frp'&&activity?calendarWeeks.map(week=>{

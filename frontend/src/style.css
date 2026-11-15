@@ -685,38 +685,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 }
 
 
-/* Daily Puzzle */
-.puzzle-dock { position:relative; flex:none }
 .header-tools .orbit-trigger { border-color:#8c513a; background:#42281e; color:#ffc29e }
 .header-tools .orbit-trigger:hover,.header-tools .orbit-trigger[aria-pressed=true] { background:#563222; border-color:#cf8054; color:#ffe4d1 }
-.header-tools .puzzle-trigger { color:#e9ad88 }
-.header-tools .puzzle-trigger[data-solved=true] { background:#214b3e; border-color:#438b71; color:#c2ffe6 }
-.puzzle-dropdown { position:absolute; z-index:8; top:calc(100% + 7px); left:0; width:min(345px,calc(100vw - 24px));
-  border:1px solid #3d4a5d; border-radius:6px; background:#141c28; color:#dce5f3; padding:12px;
-  box-shadow:0 10px 26px #0009; font-size:12px; line-height:1.45 }
-.puzzle-heading { display:flex; align-items:baseline; flex-wrap:wrap; justify-content:space-between; gap:3px 8px }
-.puzzle-region-heading { display:flex; flex-wrap:wrap; align-items:baseline; gap:0 6px }
-.puzzle-heading h2 { color:#f2eae7; font-size:17px; font-weight:680 }
-.puzzle-heading>span,.puzzle-archive { color:#abb9cc; font-size:10px }
-.puzzle-dropdown time { color:#7c899d; font:9px var(--mono) }
-.puzzle-prompt { margin:8px 0 4px }
-.puzzle-region-link.button { min-height:29px; padding:3px 0; margin:0 0 5px; border-color:transparent;
-  background:transparent; color:#edb593; font-size:11px }
-.puzzle-region-link.button:hover { color:#ffe2cc }
-.puzzle-actions { display:flex; flex-wrap:wrap; gap:5px }
-.puzzle-actions .button { min-height:29px; padding:4px 7px; font-size:10px }
-.puzzle-actions .puzzle-check,.puzzle-actions .puzzle-share { background:#253849; border-color:#48657b; color:#ebf4ff }
-.puzzle-hint,.puzzle-result p { margin:7px 0 0; color:#d3dfed }
-.puzzle-result [data-kind=incorrect] { color:#ffb8ae }
-.puzzle-result [data-kind=correct] { color:#9ee8c6 }
-.puzzle-archive { display:flex; align-items:center; gap:7px; border-top:1px solid #303949; margin-top:10px; padding-top:8px }
-.puzzle-archive select { flex:1; min-width:0; border:1px solid #3b4a5e; border-radius:4px; background:#111925; color:#dce5f3; padding:4px }
-@media(max-width:700px) {
-  .header-tools .puzzle-trigger { width:44px; height:44px }
-  .header-tools .puzzle-trigger svg { width:15px }
-  .puzzle-dropdown { position:fixed; top:56px; left:8px; width:min(345px,calc(100vw - 16px)) }
-  .puzzle-actions .button,.puzzle-archive select,.puzzle-region-link.button { min-height:44px }
-}
 
 .mission-workspace {
   --calendar-overlap:0px;
@@ -778,19 +748,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 .calendar-scale i { width:8px; height:8px; border-radius:1px; display:block }
 .calendar-scale .info-tip { width:15px; height:15px }
 .calendar-scale .info-tip svg { width:11px; height:11px }
-
-.puzzle-sparks { position:absolute; z-index:10; inset:0; pointer-events:none; overflow:visible }
-.puzzle-sparks i { position:absolute; left:50%; top:50%; width:7px; height:2px; border-radius:2px; opacity:0;
-  background:#ffd597; box-shadow:0 0 6px #f6863f; animation:puzzle-spark 1.35s var(--spark-delay) ease-out both }
-.puzzle-sparks i:nth-child(3n) { width:5px; background:#fff5e6; box-shadow:0 0 6px #ffe2ba }
-.puzzle-sparks i:nth-child(4n) { width:9px; background:#ff8d4d }
-@keyframes puzzle-spark {
-  0% { opacity:0; transform:translate(0,0) rotate(var(--spark-angle)) scale(.5) }
-  12% { opacity:1 }
-  60% { opacity:.9 }
-  100% { opacity:0; transform:translate(var(--spark-x),var(--spark-y)) rotate(var(--spark-angle)) scale(.2) }
-}
-@media(prefers-reduced-motion:reduce) { .puzzle-sparks { display:none } }
 
 .weekly-calendar-inner { min-width:max(100%,940px) }
 .week-columns,.weekly-year { display:grid; grid-template-columns:42px repeat(53,minmax(0,1fr)); gap:2px; align-items:center }

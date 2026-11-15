@@ -15,8 +15,6 @@ Use Node.js 22.13+ and pnpm 11. Run these commands from the frontend directory. 
 
 ## Verification and deployment
 
-Run the Daily Puzzle checks from the frontend directory with `node tests/daily-puzzle.test.mjs`.
-
 Build the nginx image from the repository root with `docker build -f frontend/Dockerfile -t teletraan-frontend .`.
 
 ## Telemetry and estimates

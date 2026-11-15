@@ -50,7 +50,7 @@ function catalogRegion(params:URLSearchParams):Region|null {
 
 export function snapshotFromUrl(search=window.location.search):Snapshot {
   const params=new URLSearchParams(search)
-  if(params.has('puzzle')||!fields.some(field=>params.has(field)))return initialSnapshot
+  if(!fields.some(field=>params.has(field)))return initialSnapshot
   const from=validDate(params.get('from'),firstDate)
   const to=validDate(params.get('to'),lastDate)
   if(from>to)return initialSnapshot
@@ -73,7 +73,6 @@ export function snapshotFromUrl(search=window.location.search):Snapshot {
 
 export function updateViewUrl(settings:Snapshot) {
   const url=new URL(window.location.href)
-  if(url.searchParams.has('puzzle'))return
   for(const field of fields)url.searchParams.delete(field)
   const {region,aoi,focus,date,from,to,pass,harmonized,metric,calendarView}=settings
   const params=url.searchParams

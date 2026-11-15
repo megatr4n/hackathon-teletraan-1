@@ -1,7 +1,7 @@
 import { startTransition, useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react'
 import { rankQuietMonths } from './seasonalHotspots'
 import * as Dialog from '@radix-ui/react-dialog'
-import { Activity, ArrowDown, ArrowDownToLine, ArrowUpRight, Bookmark, BookmarkPlus, Camera as CameraIcon, Circle, ChevronLeft, ChevronRight, Clock3, CodeXml, Crosshair, Database, FileText, Film, Focus as FocusIcon, Grid2X2, Layers3, Lasso, Leaf, MapPin, Puzzle as PuzzleIcon, Ruler, Search, SlidersHorizontal, Satellite, TriangleAlert, X, Zap } from 'lucide-react'
+import { Activity, ArrowDown, ArrowDownToLine, ArrowUpRight, Bookmark, BookmarkPlus, Camera as CameraIcon, Circle, ChevronLeft, ChevronRight, Clock3, CodeXml, Crosshair, Database, FileText, Film, Focus as FocusIcon, Grid2X2, Layers3, Lasso, Leaf, MapPin, Ruler, Search, SlidersHorizontal, Satellite, TriangleAlert, X, Zap } from 'lucide-react'
 import { areaPolygon, cellPolygon, clampDate, doy, firstDate, maxCircleRadius, number, prettyDate, territories, type Aoi, type Cell, type Coord } from './data'
 import { calibration, calibrationAccuracy, researchCalibration } from './calibration'
 import { cellObservations, dailyEstimates, dailyStats, dateIndex, periodStats, viirsStart } from './estimates'
@@ -12,9 +12,6 @@ import { MapStage, type Tool } from './MapStage'
 import { initialSnapshot, readPins, writePins, type Camera, type Pin, type Snapshot } from './pins'
 import { Timeline } from './Timeline'
 import { Button, InfoTip, Segmented, frpHelp, hotspotHelp, zScoreHelp } from './ui'
-import { PuzzleDropdown } from './PuzzlePanels'
-import { puzzleFocus, type Puzzle } from './dailyPuzzle'
-import { useDailyPuzzle } from './useDailyPuzzle'
 import type { HistoricalReport } from './statisticalReport'
 import { historicalApi, historicalFetch, gridParams, historicalCells, historicalRequest, useHistorical, actualDay, historicalCalendarValue, scoreDetails, actualPeriod, snppArchiveStart } from './historical'
 import { snapshotFromUrl, updateViewUrl } from './viewLink'
@@ -187,11 +184,10 @@ export function App() {
   const delta=100*(estimates.frp/focus.median-1)
   const severity=demoCells.length&&delta>130?'critical':demoCells.length&&delta>0?'elevated':'normal'
 
-  const game=useDailyPuzzle(focus.id,hasSelectedDay?date:null,setMessage)
   useEffect(()=>{
-    if(!game.open&&!orbiting)updateViewUrl(settings)
-  },[game.open,orbiting,settings])
-  const historical=historicalApi!==undefined&&!game.open
+    if(!orbiting)updateViewUrl(settings)
+  },[orbiting,settings])
+  const historical=historicalApi!==undefined
   const viirs=date>=(historical?snppArchiveStart:viirsStart)
   const activeWeek=weekRange(calendarWeeks[weekIndex(date)],from,to)
   const mapFrom=hasSelectedDay?date:activeWeek.from
@@ -203,9 +199,9 @@ export function App() {
       .filter(cell=>pass==='all'||cell.pass===pass)
       .map(cell=>{
         const readings=cellObservations(cell,pass)
-        return {...cell,raw:!game.open&&day>=viirsStart?readings.viirsFrp:harmonized?readings.correctedFrp:cell.raw}
+        return {...cell,raw:day>=viirsStart?readings.viirsFrp:harmonized?readings.correctedFrp:cell.raw}
       })))
-  },[actual.mapDays,game.open,harmonized,historical,mapFrom,mapTo,pass,source])
+  },[actual.mapDays,harmonized,historical,mapFrom,mapTo,pass,source])
   const mapCellLimit=20_000
   const mapCells=useMemo(()=>cells.length>mapCellLimit?cells.slice(0,mapCellLimit):cells,[cells])
   const mappedDetections=useMemo(()=>historical&&actual.mapDays?
@@ -220,12 +216,12 @@ export function App() {
     const aggregate=(metric:'count'|'frp')=>summarizeWeek(selectedDays.map(day=>{
       if(historical)return historicalCalendarValue(day,byDate.get(day),metric,harmonized).value
       const values=series[dateIndex(day,firstDate)]
-      if(!game.open&&day>=viirsStart)return metric==='count'?values.viirsCount:values.viirs
+      if(day>=viirsStart)return metric==='count'?values.viirsCount:values.viirs
       if(harmonized)return metric==='count'?values.correctedCount:values.corrected
       return metric==='count'?values.rawCount:values.raw
     }),false)
     return {count:aggregate('count'),frp:aggregate('frp')}
-  },[game.open,harmonized,hasSelectedDay,historical,mapFrom,mapTo,observedDays,series])
+  },[harmonized,hasSelectedDay,historical,mapFrom,mapTo,observedDays,series])
   const observedPeriod=useMemo(()=>actualPeriod(observedDays.filter(day=>day.date>=from&&day.date<=to),
     endIndex-startIndex+1,pass),[observedDays,from,to,startIndex,endIndex,pass])
   const observedDay=actualDay(actual.day,pass)
@@ -320,16 +316,6 @@ export function App() {
     setTool(null);setOrbiting(false);setPlaying(false)
     const target={lon:nextFocus.center[0],lat:nextFocus.center[1],zoom:nextFocus.zoom}
     navigateTo(target,()=>setSettings(current=>({...current,focus:nextFocus,region:next,areaMode:nextMode,aoi:null,query:next.name})),globe,880)
-  }
-  function goToPuzzleRegion(puzzle:Puzzle) {
-    const next=puzzleFocus(puzzle)
-    if(!next)return
-    const saved=tour.current?.original
-    stopTour(false)
-    setPlaying(false)
-    setTool(null)
-    setSettings(current=>({...(saved??current),focus:next,region:null,areaMode:'countries',aoi:null,query:'',harmonized:false,pass:'all'}))
-    setCommand({camera:{lon:next.center[0],lat:next.center[1],zoom:next.zoom},duration:880})
   }
   function selectMapRegion(feature:RegionFeature,point?:Coord) {
     const target=feature.properties
@@ -559,9 +545,6 @@ export function App() {
         <div className="header-tools">
           <Button className="tool-button orbit-trigger" helpDelay={500} help="Start or stop a camera tour of the showcase regions." aria-label="3D Orbit Tour / Fly-Around" aria-pressed={orbiting&&!tour.current?.short} onClick={()=>orbit()}><CameraIcon size={15}/><span>{orbiting&&!tour.current?.short?"Tour "+tourStop+"/"+tour.current?.stops.length:"3D Orbit Tour"}</span></Button>
           <Button className="tool-button" helpDelay={500} help="Fly over the four showcase regions in about ten seconds." aria-label="Demo flight over all four regions" aria-pressed={orbiting&&tour.current?.short===true} onClick={()=>orbit(true)}><Film size={15}/><span>{orbiting&&tour.current?.short?"Flight "+tourStop+"/"+tour.current.stops.length:"Demo flight"}</span></Button>
-          <PuzzleDropdown game={game} onRegion={goToPuzzleRegion} trigger={id=><Button className="tool-button puzzle-trigger" aria-label="Daily Puzzle"
-            aria-expanded={game.open} aria-controls={game.open?id:undefined} data-solved={game.solved}
-            helpDelay={500} help="Open the daily challenge and find the fire activity that matches its clues." onClick={game.toggle}><PuzzleIcon size={15}/><span>Daily Puzzle</span></Button>}/>
           <Button className="tool-button ecosystem-button" helpDelay={500} help="Show or hide peatlands, protected areas, and the Chornobyl Exclusion Zone on the map." aria-label="Peatlands & Protected Areas Overlay" aria-pressed={options.ecosystems}
             onClick={()=>setSettings(current=>({...current,options:{...current.options,ecosystems:!current.options.ecosystems}}))}><Leaf size={15}/><span>Peatlands &amp; Protected Areas</span></Button>
           <Button className="tool-button" helpDelay={500} help="Activate the ruler, then drag between two points on the map to measure the distance." aria-label="Ruler" aria-pressed={measuring} onClick={()=>{setTool(null);setMeasuring(value=>!value)}}><Ruler size={15}/><span>Ruler</span></Button>
@@ -712,7 +695,7 @@ export function App() {
       </aside>
     </div>
 
-    <Timeline date={date} daySelected={hasSelectedDay} puzzleMode={game.open} from={from} to={to} playing={playing}
+    <Timeline date={date} daySelected={hasSelectedDay} from={from} to={to} playing={playing}
       onPlay={()=>{stopTour(false);setSettings(current=>({...current,granularity:undefined}));setPlaying(value=>!value)}}
       onDay={value=>selectDate(value,true)} onWeek={value=>selectDate(value,false,false)} series={series} historicalCalendar={historicalCalendar} historyReady={Boolean(actual.days)} harmonized={harmonized} onRange={range} metric={metric} view={calendarView}
       onMetric={value=>setSettings(current=>({...current,metric:value}))} onView={value=>setSettings(current=>({...current,calendarView:value}))}/>
