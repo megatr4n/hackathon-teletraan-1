@@ -41,3 +41,15 @@ def dataset():
         },
         "limits": {"max_days": MAX_DAYS, "query_ttl_seconds": TTL.total_seconds()},
     }
+
+
+@router.get("/methodology")
+def methodology():
+    return {
+        "method_id": "firms-canonical-v1",
+        "detection_count": "FIRMS detection records grouped by platform. Multiple platforms can observe the same fire.",
+        "frp_sum_mw": "Sum of finite positive FRP readings in MW; null when none have valid FRP.",
+        "coverage": "A detection confirms records for its platform and day. Missing records imply unknown coverage.",
+        "geometry": "Exact point inclusion relative to the supplied geometry; catalog boundaries are simplified.",
+        "fire_radiative_energy": None, "emissions": None,
+    }
