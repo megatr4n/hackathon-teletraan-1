@@ -5,7 +5,7 @@ import { dateIndex, viirsStart, type DailyStats } from './estimates'
 import { Button, InfoTip, Segmented, frpHelp, hotspotHelp, zScoreHelp } from './ui'
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import type { CalendarView, Metric } from './pins'
-import { activityColors, calendarActivityScale, missingActivityColor, noActivityColor } from './calendarScale'
+import { activityColors, calendarActivityScale, frpActivityColor, missingActivityColor, noActivityColor } from './calendarScale'
 
 const months=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC']
 const palette=['#1b2630','#29353d','#443338','#663a35','#954832','#c86638','#ef8f4b','#ffc575']
@@ -78,7 +78,7 @@ const YearRows=memo(function YearRows({year,halves,current,from,to,values,heats,
             const colorIndex=Math.min(7,Math.floor(heats[start+i]*8))
             const colors=historicalDays?(metric==='z'&&(amount??0)<0?belowBaselinePalette:observedPalette):palette
             const color=metric==='z'?colors[colorIndex]:amount===null?missingActivityColor:
-              amount===0?noActivityColor:activityColors[colorIndex]
+              amount===0?noActivityColor:metric==='frp'?frpActivityColor(heats[start+i]):activityColors[colorIndex]
             return <button type="button" key={date} data-date={date} disabled={date<from||date>to} tabIndex={active?0:-1}
               aria-label={title} aria-pressed={active} title={title} className={active?'selected-cell':undefined}
               style={view==='grid'?{backgroundColor:color}:undefined}/>
@@ -102,11 +102,15 @@ function CalendarScaleLegend({scale,metric}:{scale:NonNullable<ReturnType<typeof
         if(upper===lower)return null
         const label=upper===undefined?'≥ '+formatBand(lower):lower===0?'> 0 and < '+formatBand(upper):
           formatBand(lower)+' to < '+formatBand(upper)
-        return <i key={index} style={{background:activityColors[index]}} title={label+' '+unit}/>
+        const color=activityColors[index]
+        const background=metric==='frp'&&upper!==undefined?
+          'linear-gradient(to right, '+color+', '+activityColors[index+1]+')':color
+        return <i key={index} style={{background}} title={label+' '+unit}/>
       })}
     </div>
     <span>≥ {formatBand(scale.lowerBounds[scale.lowerBounds.length-1])} {unit}</span>
-    <InfoTip label="Calendar color scale" help="Raw Satellite and Harmonized share percentile bands computed from both modes’ positive values across this area and orbital pass. Brighter colors indicate more hotspots or higher FRP. Hover a day for its value in the original units."/>
+    <InfoTip label="Calendar color scale" help={(metric==='frp'?'FRP uses a smooth gradient between percentile breaks. ':'Hotspot counts use discrete percentile bands. ')+
+      'Both modes share a scale computed from their positive values across this area and orbital pass. Hover a day for its value in the original units.'}/>
   </div>
 }
 
@@ -169,7 +173,7 @@ export function Timeline({date,from,to,playing,onPlay,onSelect,series,historical
       (count?day.viirsCount:day.viirs):adjusted?(count?day.correctedCount:day.corrected):(count?day.rawCount:day.raw))
     const raw=historicalCalendar?.raw.map(day=>day.value)??demoValues(false)
     const adjusted=historicalCalendar?.harmonized.map(day=>day.value)??demoValues(true)
-    return {raw,adjusted,scale:calendarActivityScale(raw,adjusted)}
+    return {raw,adjusted,scale:calendarActivityScale(raw,adjusted,metric)}
   },[series,metric,historicalCalendar])
   const {values,heats}=useMemo(()=>{
     if(activity){

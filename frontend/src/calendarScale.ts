@@ -1,11 +1,26 @@
 // Resolve more detail among lower and typical values, and group the long upper tail.
-const percentiles=[.10,.20,.30,.40,.50,.75,.97]
+const countPercentiles=[.10,.20,.30,.40,.50,.75,.97]
+// FRP's long upper tail leaves fewer distinct colors near typical readings.
+const frpPercentiles=[.10,.30,.40,.45,.50,.55,.97]
 
 export const activityColors=['#593626','#78462d','#995438','#ba6840','#d9814b','#ed9e5b','#f6ba75','#ffdfa7']
+const activityChannels=activityColors.map(color=>[1,3,5].map(index=>parseInt(color.slice(index,index+2),16)))
+
+export function frpActivityColor(heat:number) {
+  const position=Math.min(activityColors.length-1,heat*activityColors.length)
+  const lower=Math.floor(position)
+  const next=activityChannels[lower+1]
+  if(!next)return activityColors[lower]
+  const blend=position-lower
+  const channels=activityChannels[lower].map((value,index)=>Math.round(value+(next[index]-value)*blend))
+  return 'rgb('+channels.join(',')+')'
+}
+
 export const noActivityColor='#293845'
 export const missingActivityColor='#1b2630'
 
-export function calendarActivityScale(raw:(number|null)[],harmonized:(number|null)[]) {
+export function calendarActivityScale(raw:(number|null)[],harmonized:(number|null)[],metric:'count'|'frp'='count') {
+  const percentiles=metric==='frp'?frpPercentiles:countPercentiles
   const positives=[...raw,...harmonized]
     .filter((value):value is number=>value!==null&&value>0&&Number.isFinite(value))
     .sort((a,b)=>a-b)
