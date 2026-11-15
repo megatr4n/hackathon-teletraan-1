@@ -198,6 +198,7 @@ class ReportResponse(Provenance):
     report_start: date
     report_end: date
     area: dict
+    area_bounds: tuple[float, float, float, float]
     series: list[CalendarDay]
     day: CalendarDay
     period: list[PlatformSummary]
@@ -511,7 +512,7 @@ def report_data(query_id: str, date: date, start: date | None = None, end: date 
     rows = calendar_rows(selection)
     scores = calendar_scores(selection)
     return {**selection.metadata(), "report_start": start, "report_end": end,
-            "area": selection.request.area.model_dump(mode="json"),
+            "area": selection.request.area.model_dump(mode="json"), "area_bounds": selection.bounds,
             "series": [annotate_day(day, row, scores) for day, row in rows.items() if start <= day <= end],
             "day": annotate_day(date, rows[date], scores),
             "period": summarize(selection, start, end), "methodology": methodology()}

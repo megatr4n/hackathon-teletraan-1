@@ -95,6 +95,7 @@ export function buildHistoricalPdf(report:HistoricalReport,areaLabel:string,font
   let y=table(['Selection','Value'],[
     ['Area label',areaLabel||JSON.stringify(report.area)],
     ['Exact selection',JSON.stringify(report.area).length>150?'Custom geometry; coordinates are retained in report evidence JSON.':JSON.stringify(report.area)],
+    ['Bounds (west, south, east, north)',report.area_bounds.map(v=>v.toFixed(5)).join(', ')],
     ['Period (UTC, inclusive)',report.report_start+' to '+report.report_end],['Selected day',report.day.date],
     ['Orbital pass',report.pass],['Platforms',report.platforms.map(p=>platformLabels[p]).join(', ')],
     ['Dataset release',report.dataset_release],['Aggregation / spatial policy',report.method_id+' / '+report.spatial_mode],
@@ -104,6 +105,7 @@ export function buildHistoricalPdf(report:HistoricalReport,areaLabel:string,font
   y=para(report.dataset_manifest_sha256,y,7.5)
   y=para('Query: '+report.query_id+' | Report method: '+reportVersion,y,8)
   y=para('Reading this report',y+3,12,ink)
+  if(report.area.kind==='preset')y=para('Preset statistics cover the full bounding box above. The display name does not restrict them to the named fire incident or its perimeter.',y,8)
   y=para('Raw values come from the verified FIRMS archive. Harmonized MODIS counts are derived estimates using the configured project coefficient. They are not extra observed fire pixels.',y)
   para('Detections count satellite records, not distinct fires or burned area. Missing records do not establish an absence of fire. This report does not estimate fire energy, emissions, damage or a calibrated risk probability.',y)
 
@@ -168,8 +170,8 @@ export function buildHistoricalPdf(report:HistoricalReport,areaLabel:string,font
   const paired=pairedCounts(counts)
   y=para('Matched observed days: '+paired.n+' of '+report.series.length+' requested days. VIIRS is the comparison series; all unmatched dates are excluded from both MODIS comparisons.',64)
   y=table(['Same matched days','Raw MODIS','Harmonized MODIS'],[
-    ['Mean absolute difference (counts)',fmt(paired.raw.absoluteMean),fmt(paired.adjusted.absoluteMean)],
-    ['Signed mean difference (counts)',fmt(paired.raw.mae),fmt(paired.adjusted.mae)],
+    ['Mean absolute difference (counts)',fmt(paired.raw.mae),fmt(paired.adjusted.mae)],
+    ['Signed mean difference (counts)',fmt(paired.raw.meanDifference),fmt(paired.adjusted.meanDifference)],
     ['WAPE relative to VIIRS (%)',fmt(paired.raw.wape),fmt(paired.adjusted.wape)],['Aggregate relative bias (%)',fmt(paired.raw.bias),fmt(paired.adjusted.bias)],
   ],y+3,[88,45,45])
   y=para('For matched dates: difference = MODIS - VIIRS. WAPE = 100 x sum(abs(difference)) / sum(VIIRS). Relative bias = 100 x sum(difference) / sum(VIIRS). N/A denotes no matched days or a zero denominator.',y)

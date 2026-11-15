@@ -9,7 +9,7 @@ export type Summary = Metrics & {platform:Platform; requested_days:number; days_
 export type HistoricalReport = {
   source:'firms'; query_id:string; dataset_release:string; dataset_manifest_sha256:string
   geometry_version:string; quality_policy:string; spatial_mode:string; method_id:string
-  pass:Pass; from:string; to:string; platforms:Platform[]; area:Record<string,unknown>
+  pass:Pass; from:string; to:string; platforms:Platform[]; area:Record<string,unknown>; area_bounds:[number,number,number,number]
   report_start:string; report_end:string; day:ReportDay; series:ReportDay[]; period:Summary[]
   methodology:Record<string,unknown>
 }
@@ -60,7 +60,7 @@ export function pairedCounts(days:DailyCount[]) {
   const stats=(key:'raw'|'adjusted')=>{
     const errors=pairs.map(d=>d[key]-d.viirs)
     const absolute=sum(errors.map(Math.abs))
-    return {mae:mean(errors),absoluteMean:mean(errors.map(Math.abs)),
+    return {meanDifference:mean(errors),mae:mean(errors.map(Math.abs)),
       wape:reference&&absolute!==null?100*absolute/reference:null,
       bias:reference?100*(sum(errors)??0)/reference:null}
   }
@@ -89,6 +89,7 @@ export function validateReport(report:HistoricalReport,from:string,to:string,que
         throw new Error('Inconsistent FRP record counts.')
     }
   })
+  if(report.period.some((p,i)=>p.platform!==report.platforms[i]))throw new Error('Platform summaries are out of order.')
   if(report.period.length!==report.platforms.length||new Set(report.period.map(p=>p.platform)).size!==report.platforms.length)
     throw new Error('Incomplete platform summary.')
   for(const summary of report.period){
