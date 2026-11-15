@@ -2,7 +2,7 @@ import * as ToggleGroup from '@radix-ui/react-toggle-group'
 import { Slot } from '@radix-ui/react-slot'
 import { clsx } from 'clsx'
 import { twMerge } from 'tailwind-merge'
-import { useId, useState, type ButtonHTMLAttributes, type ReactNode, type Ref } from 'react'
+import { useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type ReactNode, type Ref } from 'react'
 import { createPortal } from 'react-dom'
 import { Info } from 'lucide-react'
 
@@ -10,26 +10,38 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   asChild?:boolean
   ref?:Ref<HTMLButtonElement>
   help?:string
+  helpDelay?:number
 }
 
 // shadcn/ui's component pattern, with variants styled for this console.
-export function Button({ asChild, className, type = 'button', help, ...props }:ButtonProps) {
+export function Button({ asChild, className, type = 'button', help, helpDelay, ...props }:ButtonProps) {
   const Component = asChild ? Slot : 'button'
-  if(help&&!asChild)return <HelpButton className={className} type={type} help={help} {...props}/>
+  if(help&&!asChild)return <HelpButton className={className} type={type} help={help} helpDelay={helpDelay} {...props}/>
   return <Component type={type} className={twMerge(clsx('button', className))} {...props} />
 }
 
-function HelpButton({help,children,className,onFocus,onBlur,onPointerEnter,onPointerLeave,onKeyDown,...props}:ButtonProps) {
+function HelpButton({help,helpDelay=0,children,className,onFocus,onBlur,onPointerEnter,onPointerLeave,onKeyDown,...props}:ButtonProps) {
   const id=useId()
   const [anchor,setAnchor]=useState<DOMRect|null>(null)
+  const timer=useRef<number|undefined>(undefined)
+  useEffect(()=>()=>window.clearTimeout(timer.current),[])
+  function hide() {
+    window.clearTimeout(timer.current)
+    setAnchor(null)
+  }
+  function hover(button:HTMLButtonElement) {
+    window.clearTimeout(timer.current)
+    if(helpDelay)timer.current=window.setTimeout(()=>setAnchor(button.getBoundingClientRect()),helpDelay)
+    else setAnchor(button.getBoundingClientRect())
+  }
   const left=anchor?Math.max(8,Math.min(anchor.left+anchor.width/2-120,window.innerWidth-248)):0
   const above=anchor!==null&&anchor.bottom>window.innerHeight/2
   return <button {...props} className={twMerge(clsx('button',className))} aria-describedby={id}
-    onFocus={event=>{setAnchor(event.currentTarget.getBoundingClientRect());onFocus?.(event)}}
-    onBlur={event=>{setAnchor(null);onBlur?.(event)}}
-    onPointerEnter={event=>{setAnchor(event.currentTarget.getBoundingClientRect());onPointerEnter?.(event)}}
-    onPointerLeave={event=>{setAnchor(null);onPointerLeave?.(event)}}
-    onKeyDown={event=>{if(event.key==='Escape')setAnchor(null);onKeyDown?.(event)}}>
+    onFocus={event=>{if(event.currentTarget.matches(':focus-visible'))setAnchor(event.currentTarget.getBoundingClientRect());onFocus?.(event)}}
+    onBlur={event=>{hide();onBlur?.(event)}}
+    onPointerEnter={event=>{if(event.pointerType!=='touch')hover(event.currentTarget);onPointerEnter?.(event)}}
+    onPointerLeave={event=>{hide();onPointerLeave?.(event)}}
+    onKeyDown={event=>{if(event.key==='Escape')hide();onKeyDown?.(event)}}>
     {children}<span id={id} hidden>{help}</span>
     {anchor&&createPortal(<span aria-hidden="true" className="help-tooltip" style={above?
       {left,bottom:window.innerHeight-anchor.top+6}:{left,top:anchor.bottom+6}}>{help}</span>,document.body)}
