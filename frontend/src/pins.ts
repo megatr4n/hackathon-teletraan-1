@@ -8,7 +8,10 @@ export type CalendarView = 'grid' | 'ridge'
 export type Snapshot = {
   focus:Focus; region:Region|null; date:string; from:string; to:string; pass:Pass; harmonized:boolean;
   areaMode:AreaMode; aoi:Aoi|null; radius:number; query:string; options:MapOptions; camera:Camera;
-  metric:Metric; calendarView:CalendarView; granularity?:'day'
+  metric:Metric; calendarView:CalendarView; granularity?:'day'; fullArchive?:boolean
+}
+export function dateRangeFor({from,to,fullArchive}:Pick<Snapshot,'from'|'to'|'fullArchive'>) {
+  return fullArchive?{from:firstDate,to:lastDate}:{from,to}
 }
 export type Pin = { id:string; name:string; snapshot:Snapshot }
 export const defaultOptions:MapOptions={grid:true,satellite:false,ecosystems:false}

@@ -1,14 +1,50 @@
 """Small canonical data fixture shared by reader regression checks."""
 
+import os
 import unittest
 from datetime import date
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import duckdb
 
 from app.services import historical_data as data
+
+
+class LocalReleaseTest(unittest.TestCase):
+    def setUp(self):
+        repo = Path(self.enterContext(TemporaryDirectory()))
+        manifest = Path("docs/data-release/RELEASE.json")
+        trusted = (data.REPO / manifest).read_bytes()
+        (repo / manifest).parent.mkdir(parents=True)
+        (repo / manifest).write_bytes(trusted)
+        self.release = repo / "Архів FIRMS" / "teletraan-data-v1"
+        self.release.mkdir(parents=True)
+        (self.release / "RELEASE.json").write_bytes(trusted)
+        self.path_file = repo / "data-path.txt"
+        self.enterContext(patch.object(data, "REPO", repo))
+        self.enterContext(patch.object(data, "DATA_PATH_FILE", self.path_file))
+        self.enterContext(patch.dict(os.environ, {"FIRMS_DATA_ROOT": ""}))
+        self.addCleanup(data.open_release.cache_clear)
+
+    def test_extracted_zip_requires_only_a_configured_folder(self):
+        self.path_file.write_text('"Архів FIRMS/teletraan-data-v1"\n', encoding="utf-8-sig")
+        release = data.active_release()
+        self.assertEqual(release.id, "teletraan-data-v1")
+        self.assertTrue(release.partitions)
+
+    def test_path_to_parent_folder_reports_how_to_fix_it(self):
+        self.path_file.write_text(str(self.release.parent), encoding="utf-8")
+        with self.assertRaisesRegex(data.DatasetUnavailable, "containing RELEASE.json"):
+            data.active_release()
+
+    def test_env_override_still_requires_an_imported_release(self):
+        self.path_file.write_text(str(self.release), encoding="utf-8")
+        with patch.dict(os.environ, {"FIRMS_DATA_ROOT": str(self.release)}):
+            with self.assertRaisesRegex(data.DatasetUnavailable, "verified by the importer"):
+                data.active_release()
 
 
 class HistoricalDataTest(unittest.TestCase):

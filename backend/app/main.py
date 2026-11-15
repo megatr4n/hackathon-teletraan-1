@@ -41,6 +41,8 @@ def readiness():
         start, end = historical_data.RANGES["modis"]
         release.paths(historical_data.SENSOR, start, end, "observations")
         historical_data.geography_file("countries")
-    except (historical_data.DatasetUnavailable, OSError, ValueError) as error:
+    except historical_data.DatasetUnavailable as error:
+        raise historical.failure(503, "dataset_unavailable", str(error)) from error
+    except (OSError, ValueError) as error:
         raise HTTPException(503, "Historical data or geography is unavailable") from error
     return {"status": "READY", "dataset_release": release.id}

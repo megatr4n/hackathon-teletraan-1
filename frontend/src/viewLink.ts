@@ -1,8 +1,8 @@
 import { clampDate, firstDate, iso, lastDate, maxCircleRadius, scenarios, type Aoi, type Coord } from './data'
 import { countryOptions, focusForRegion, type Region } from './geography'
-import { initialSnapshot, type Snapshot } from './pins'
+import { dateRangeFor, initialSnapshot, type Snapshot } from './pins'
 
-const fields=['country','scenario','region','area','date','from','to','pass','mode','metric','view','granularity'] as const
+const fields=['country','scenario','region','area','date','from','to','pass','mode','metric','view','granularity','scope'] as const
 
 function validDate(value:string|null, fallback:string) {
   if(!value||!/^\d{4}-\d{2}-\d{2}$/.test(value))return fallback
@@ -56,13 +56,15 @@ export function snapshotFromUrl(search=window.location.search):Snapshot {
   if(from>to)return initialSnapshot
   const region=catalogRegion(params)
   const scenario=scenarios.find(entry=>entry.id===params.get('scenario'))??initialSnapshot.focus
-  const date=clampDate(validDate(params.get('date'),scenario.date),from,to)
+  const fullArchive=params.get('scope')==='archive'
+  const range=dateRangeFor({from,to,fullArchive})
+  const date=clampDate(validDate(params.get('date'),scenario.date),range.from,range.to)
   const aoi=localArea(params.get('area'))
   const focus=region?focusForRegion(region,date):scenario
   const center=aoi?.type==='circle'?aoi.center:aoi?.type==='lasso'?aoi.ring[0]:focus.center
   const normalizedFocus=aoi?{...focus,center}:focus
   const pass=params.get('pass'),metric=params.get('metric')
-  return {...initialSnapshot,focus:normalizedFocus,region:aoi?null:region,date,from,to,aoi,
+  return {...initialSnapshot,focus:normalizedFocus,region:aoi?null:region,date,from,to,aoi,fullArchive,
     areaMode:aoi?'custom':region?.kind==='eco'?'ecoregions':'countries',
     radius:aoi?.type==='circle'?aoi.radius:initialSnapshot.radius,query:region?.name??'',
     pass:pass==='day'||pass==='night'?pass:'all',harmonized:params.get('mode')!=='raw',
@@ -88,6 +90,7 @@ export function updateViewUrl(settings:Snapshot) {
   if(pass!=='all')params.set('pass',pass)
   if(!harmonized)params.set('mode','raw')
   if(settings.granularity==='day')params.set('granularity','day')
+  if(settings.fullArchive)params.set('scope','archive')
   // Existing shared views omit the metric for FRP. The bare URL uses the new default.
   if(metric!==initialSnapshot.metric||fields.some(field=>params.has(field)))params.set('metric',metric)
   if(calendarView!=='grid')params.set('view',calendarView)

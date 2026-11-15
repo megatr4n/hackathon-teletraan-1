@@ -676,10 +676,12 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 .map-metrics .kpis section>span { flex-wrap:wrap; white-space:normal }
 .analytics .export-buttons { padding-top:9px; border-top-color:#465568 }
 .analytics .export-buttons .button { min-height:36px; height:auto; text-align:left }
-.timeline-top.compact-timeline { display:grid; grid-template-columns:max-content minmax(204px,236px) max-content minmax(220px,1fr) auto;
+.timeline-top.compact-timeline { display:grid; grid-template-columns:max-content minmax(286px,310px) max-content minmax(220px,1fr) auto;
   grid-template-areas:"title dates calibration player view"; min-height:48px; gap:8px 12px; padding:8px 13px; align-items:center }
 .compact-timeline .timeline-title { grid-area:title }
-.compact-timeline .date-grid { grid-area:dates }
+.timeline-dates { grid-area:dates; display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:end; gap:6px }
+.timeline-dates .archive-toggle { min-height:35px; padding:0 8px; white-space:nowrap }
+.timeline-dates .archive-toggle[aria-pressed=true] { color:#ffc29e; border-color:#a05e44; background:#44291f }
 .compact-timeline .timeline-calibration { grid-area:calibration; min-width:0; justify-self:start }
 .compact-timeline .timeline-player { grid-area:player; width:100%; min-width:0 }
 .compact-timeline .timeline-view { grid-area:view; justify-self:end }
@@ -717,11 +719,11 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 .timeline-player .timeline-controls { padding-inline:0; min-width:0; flex-wrap:nowrap; justify-content:flex-start }
 .timeline-player .timeline-note { min-width:0; width:auto; margin:0 }
 @media(max-width:1200px) {
-  .timeline-top.compact-timeline { grid-template-columns:minmax(204px,236px) max-content minmax(0,1fr);
+  .timeline-top.compact-timeline { grid-template-columns:minmax(286px,310px) max-content minmax(0,1fr);
     grid-template-areas:"title title view" "dates calibration player" }
 }
 @media(max-width:850px) {
-  .timeline-top.compact-timeline { grid-template-columns:minmax(204px,236px) minmax(0,1fr);
+  .timeline-top.compact-timeline { grid-template-columns:minmax(286px,310px) minmax(0,1fr);
     grid-template-areas:"title view" "dates calibration" "player player" }
 }
 @media(max-width:550px) {
