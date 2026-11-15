@@ -156,8 +156,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 .kpis strong small { color:#8c9cad; font-size:9px; font-weight:480; letter-spacing:0 }
 .export-buttons { display:grid; gap:6px; margin-top:auto }
 .export-buttons .button { height:33px; font-size:11px; justify-content:flex-start; padding:0 9px; font-weight:650 }
-.button.csv-button { background:#22604f; border-color:#367f68; color:#e8fff4 }
-.button.csv-button:not(:disabled):hover { background:#2e795f; border-color:#62b28e }
+.button.csv-button,.button.pdf-button { background:#22604f; border-color:#367f68; color:#e8fff4 }
+.button.csv-button:not(:disabled):hover,.button.pdf-button:not(:disabled):hover { background:#2e795f; border-color:#62b28e }
+.export-buttons .button.csv-button { background:#29313b; border-color:#495666; color:#e0e6ed }
+.export-buttons .button.csv-button:not(:disabled):hover { background:#384453; border-color:#657689 }
 .button.geojson-button { background:#192331; border-color:#354359; color:#c4cfdd }
 .button-tail { margin-left:auto; opacity:.7 }
 

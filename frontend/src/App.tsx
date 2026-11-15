@@ -625,7 +625,7 @@ export function App() {
         <div className="export-buttons">
           <Button className="csv-button" disabled={historical?!actual.selection:!cells.length} onClick={()=>exportData('csv')}><ArrowDownToLine size={15}/> Download Filtered CSV<ArrowUpRight size={13} className="button-tail"/></Button>
           <Button className="geojson-button" disabled={historical?!actual.selection:!cells.length} onClick={()=>exportData('geojson')}><CodeXml size={15}/> Export GeoJSON for QGIS<ArrowUpRight size={13} className="button-tail"/></Button>
-          <Button className="geojson-button" disabled={exportingReport||(historical&&!actual.selection)} onClick={exportReport}><FileText size={15}/> {exportingReport?'Preparing PDF…':'Export Statistical Report (PDF)'}<ArrowUpRight size={13} className="button-tail"/></Button>
+          <Button className="pdf-button" disabled={exportingReport||(historical&&!actual.selection)} onClick={exportReport}><FileText size={15}/> {exportingReport?'Preparing PDF…':'Export Statistical Report (PDF)'}<ArrowUpRight size={13} className="button-tail"/></Button>
         </div>
       </aside>
     </div>
