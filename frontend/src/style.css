@@ -733,8 +733,15 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
   .puzzle-actions .button,.puzzle-archive select,.puzzle-region-link.button { min-height:44px }
 }
 
-.mission-workspace { --calendar-overlap:0px; position:relative }
+.mission-workspace {
+  --calendar-overlap:0px;
+  --calendar-resting-height:144px;
+  --calendar-overlay:max(0px,var(--calendar-overlap));
+  --workbench-height:max(490px,calc(100dvh - 259px));
+  position:relative;
+}
 .mission-workspace .workbench {
+  height:calc(var(--workbench-height) - min(0px,var(--calendar-overlap)));
   --left-panel:clamp(223px,18.9vw,295px);
   --right-panel:clamp(274px,22.4vw,345px);
   grid-template-columns:var(--left-panel) minmax(0,1fr) var(--right-panel);
@@ -744,24 +751,25 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 .mission-workspace .workbench[data-filters-open=false] { --left-panel:0px }
 .mission-workspace .workbench[data-analytics-open=false] { --right-panel:0px }
 .mission-workspace .workbench>.filters,.mission-workspace .workbench>.analytics { grid-row:1 }
-.mission-workspace .workbench>.filters { margin-bottom:var(--calendar-overlap); overflow:visible }
+.mission-workspace .workbench>.filters { margin-bottom:var(--calendar-overlay); overflow:visible }
 .workbench>.filters .query-filter-sections>.filter-section { flex:none }
 .workbench>[hidden] { display:none }
-.mission-workspace .map-stage { grid-area:1 / 2; margin-bottom:var(--calendar-overlap) }
+.mission-workspace .map-stage { grid-area:1 / 2; margin-bottom:var(--calendar-overlay) }
 .panel-toggle.button { position:absolute; top:19px; z-index:4; width:23px; height:58px; padding:0; color:#c1cddd; background:#151e2a; border:1px solid #455267 }
 .panel-toggle[aria-expanded=true] { color:#ffad83 }
 .panel-toggle-left.button { left:var(--left-panel); border-radius:0 5px 5px 0 }
 .panel-toggle-right.button { right:var(--right-panel); border-radius:5px 0 0 5px }
-.mission-workspace .timeline { position:relative; z-index:5; margin-top:calc(-1 * var(--calendar-overlap)) }
-.mission-workspace .daily-calendar { height:calc(144px + var(--calendar-overlap)); max-height:none }
+.mission-workspace .timeline { position:relative; z-index:5; margin-top:calc(-1 * var(--calendar-overlay)) }
+.mission-workspace .daily-calendar { height:calc(var(--calendar-resting-height) + var(--calendar-overlap)); max-height:none }
 .mission-workspace .timeline-top { position:relative }
 .calendar-drag-handle { position:absolute; z-index:1; inset:0 0 auto; height:7px }
 .calendar-drag-handle,.mission-workspace .timeline-title { cursor:ns-resize; touch-action:none; user-select:none }
 .calendar-drag-handle:focus-visible { outline:1px solid #ffad83; outline-offset:-1px }
 @media(max-width:900px) {
-  .mission-workspace .workbench { height:485px; min-height:0; grid-template-columns:0 minmax(0,1fr) 0 }
+  .mission-workspace { --workbench-height:485px }
+  .mission-workspace .workbench { min-height:0; grid-template-columns:0 minmax(0,1fr) 0 }
   .mission-workspace .workbench>.filters,.mission-workspace .workbench>.analytics { position:absolute; z-index:3; top:0; bottom:0; grid-area:auto; width:min(320px,calc(100% - 68px)) }
-  .mission-workspace .workbench>.filters { left:0; bottom:var(--calendar-overlap); margin-bottom:0 }
+  .mission-workspace .workbench>.filters { left:0; bottom:var(--calendar-overlay); margin-bottom:0 }
   .mission-workspace .workbench>.analytics { right:0; grid-template-rows:auto auto minmax(0,1fr) auto }
   .mission-workspace .panel-toggle[aria-expanded=true].panel-toggle-left { left:min(320px,calc(100% - 68px)) }
   .mission-workspace .panel-toggle[aria-expanded=true].panel-toggle-right { right:min(320px,calc(100% - 68px)) }
@@ -770,7 +778,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
   .mission-workspace .workbench[data-analytics-open=true] .map-controls { right:calc(min(320px, 100% - 68px) + 14px) }
 }
 @media(max-width:560px) {
-  .mission-workspace .workbench { height:420px }
+  .mission-workspace { --workbench-height:420px }
 }
 
 .button.info-tip { flex:none; width:20px; height:20px; min-height:0; padding:0; border:0; background:transparent; color:#aabaca }

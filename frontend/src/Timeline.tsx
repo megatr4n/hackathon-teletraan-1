@@ -10,6 +10,8 @@ const months=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV',
 const palette=['#1b2630','#29353d','#443338','#663a35','#954832','#c86638','#ef8f4b','#ffc575']
 const observedPalette=['#1b2630','#705047','#875443','#a05e47','#b96c44','#d2804c','#ef9a57','#ffc575']
 const belowBaselinePalette=['#1b2630','#355268','#3d6581','#467b9c','#4e94b6','#60a9cc','#7abfe1','#a7d9f3']
+const restingCalendarHeight=144
+const collapsedCalendar=-restingCalendarHeight
 const metricHelp={frp:frpHelp,count:hotspotHelp,z:zScoreHelp}
 const metricLabels = {frp:'FRP',count:'Hotspot Count',z:'Z-Score'}
 type HistoricalDay = { value:number|null; source:string; details?:string }
@@ -95,6 +97,7 @@ export function Timeline({date,from,to,playing,onPlay,onSelect,series,historical
   const [overlap,setOverlap]=useState(0)
   const [limit,setLimit]=useState(0)
   useLayoutEffect(()=>{
+    const pane=panel.current?.parentElement
     const workbench=panel.current?.previousElementSibling
     if(!workbench)return
     const filters=workbench.querySelector<HTMLElement>('#query-filters')
@@ -110,7 +113,8 @@ export function Timeline({date,from,to,playing,onPlay,onSelect,series,historical
         const padding=parseFloat(spacing.paddingTop)+parseFloat(spacing.paddingBottom)
         minimum=Math.max(minimum,Math.ceil(heading.getBoundingClientRect().height+contentHeight+gaps+padding))
       }
-      const max=Math.max(0,Math.min(480,workbench.clientHeight-minimum))
+      const extension=Math.max(0,-(parseFloat(pane?.style.getPropertyValue('--calendar-overlap')??'')||0))
+      const max=Math.max(0,Math.min(480,workbench.clientHeight-extension-minimum))
       setLimit(max)
       setOverlap(current=>Math.min(current,max))
     })
@@ -118,7 +122,9 @@ export function Timeline({date,from,to,playing,onPlay,onSelect,series,historical
     return ()=>observer.disconnect()
   },[])
   useLayoutEffect(()=>{
-    panel.current?.parentElement?.style.setProperty('--calendar-overlap',overlap+'px')
+    const pane=panel.current?.parentElement
+    pane?.style.setProperty('--calendar-resting-height',restingCalendarHeight+'px')
+    pane?.style.setProperty('--calendar-overlap',overlap+'px')
   },[overlap])
 
   function startResize(event:ReactPointerEvent<HTMLDivElement>) {
@@ -129,13 +135,13 @@ export function Timeline({date,from,to,playing,onPlay,onSelect,series,historical
   }
   function resize(event:ReactPointerEvent<HTMLDivElement>) {
     const start=drag.current
-    if(start?.pointerId===event.pointerId)setOverlap(Math.min(limit,Math.max(0,start.overlap+start.y-event.clientY)))
+    if(start?.pointerId===event.pointerId)setOverlap(Math.min(limit,Math.max(collapsedCalendar,start.overlap+start.y-event.clientY)))
   }
   function resizeWithKeyboard(event:KeyboardEvent<HTMLDivElement>) {
     if(!['ArrowUp','ArrowDown','Home','End'].includes(event.key))return
     event.preventDefault()
-    setOverlap(current=>event.key==='Home'?0:event.key==='End'?limit:
-      Math.min(limit,Math.max(0,current+(event.key==='ArrowUp'?24:-24))))
+    setOverlap(current=>event.key==='Home'?collapsedCalendar:event.key==='End'?limit:
+      Math.min(limit,Math.max(collapsedCalendar,current+(event.key==='ArrowUp'?24:-24))))
   }
 
   const historical=historicalDays!==undefined
@@ -163,7 +169,8 @@ export function Timeline({date,from,to,playing,onPlay,onSelect,series,historical
     <div className="timeline-top compact-timeline" onPointerDown={startResize} onPointerMove={resize}
       onLostPointerCapture={()=>{drag.current=null}}>
       <div className="calendar-drag-handle" role="separator" aria-label="Resize calendar" aria-orientation="horizontal"
-        aria-valuemin={0} aria-valuemax={limit} aria-valuenow={overlap} tabIndex={0} onKeyDown={resizeWithKeyboard}/>
+        aria-valuemin={collapsedCalendar} aria-valuemax={limit} aria-valuenow={overlap}
+        aria-valuetext={overlap===collapsedCalendar?'Calendar collapsed':undefined} tabIndex={0} onKeyDown={resizeWithKeyboard}/>
       <div className="timeline-title"><span className="section-icon"><CalendarDays size={16}/></span><div><h2>Burning activity calendar</h2><span className="mono">2000–2025 ARCHIVE</span></div></div>
       <DateRangeFields from={from} to={to} onRange={onRange}/>
       <div className="timeline-player">
@@ -188,7 +195,7 @@ export function Timeline({date,from,to,playing,onPlay,onSelect,series,historical
         <Segmented label="Calendar view" value={view} onChange={onView} items={[{value:'grid',label:<><Grid3X3 size={13}/> Grid Matrix</>},{value:'ridge',label:<><ChartNoAxesCombined size={14}/> Ridge Waves</>}]}/>
       </div>
     </div>
-    <div className="daily-calendar" tabIndex={0} aria-label="Daily archive, 2000 to 2025"
+    <div className="daily-calendar" hidden={overlap===collapsedCalendar} tabIndex={0} aria-label="Daily archive, 2000 to 2025"
       onKeyDown={event=>{if(event.key==='ArrowLeft'||event.key==='ArrowRight'){event.preventDefault();change(event.key==='ArrowLeft'?-1:1)}}}
       onClick={event=>{const chosen=(event.target as HTMLElement).closest<HTMLButtonElement>('button[data-date]');if(chosen?.dataset.date&&!chosen.disabled)onSelect(chosen.dataset.date,true)}}>
       <div className="daily-calendar-inner">
