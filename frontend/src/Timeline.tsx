@@ -1,6 +1,7 @@
 import { CalendarDays, ChartNoAxesCombined, ChevronDown, Grid3X3, Pause, Play, SkipBack, SkipForward, X } from 'lucide-react'
 import { DAY, firstDate, iso, lastDate, prettyDate, clampDate } from './data'
 import { archiveDates } from './observations'
+import { researchCalibration } from './calibration'
 import { calendarWeeks, summarizeWeek, weekIndex, weekRange, weeksByYear, type CalendarWeek } from './calendarWeeks'
 import { dateIndex, viirsStart, type DailyStats } from './estimates'
 import { Button, InfoTip, Segmented, frpHelp, hotspotHelp, zScoreHelp } from './ui'
@@ -107,9 +108,9 @@ function CalendarScaleLegend({scale,metric,harmonized}:{scale:NonNullable<Return
   </div>
 }
 
-export function Timeline({date,daySelected,from,to,playing,onPlay,onDay,onWeek,series,historicalCalendar,historyReady,harmonized,onRange,metric,view,onMetric,onView}:{
+export function Timeline({date,daySelected,from,to,playing,onPlay,onDay,onWeek,series,historicalCalendar,historyReady,harmonized,onCalibration,onRange,metric,view,onMetric,onView}:{
   date:string;daySelected:boolean;from:string;to:string;playing:boolean;onPlay:()=>void;onDay:(date:string)=>void;onWeek:(date:string)=>void;
-  series:DailyStats[];harmonized:boolean;onRange:(from:string,to:string)=>void;metric:Metric;view:CalendarView;
+  series:DailyStats[];harmonized:boolean;onCalibration:(value:boolean)=>void;onRange:(from:string,to:string)=>void;metric:Metric;view:CalendarView;
   onMetric:(metric:Metric)=>void;onView:(view:CalendarView)=>void
   historicalCalendar?:HistoricalCalendar
   historyReady?:boolean
@@ -230,6 +231,16 @@ export function Timeline({date,daySelected,from,to,playing,onPlay,onDay,onWeek,s
         aria-valuetext={overlap===collapsedCalendar?'Calendar collapsed':undefined} tabIndex={0} onKeyDown={resizeWithKeyboard}/>
       <div className="timeline-title"><span className="section-icon"><CalendarDays size={16}/></span><div><h2>Burning activity calendar</h2><span className="mono">2000–2025 ARCHIVE</span></div></div>
       <DateRangeFields from={from} to={to} onRange={onRange}/>
+      <div className="timeline-calibration">
+          <div className="timeline-calibration-label">Intercalibration
+            <InfoTip label="Intercalibration" help={(historical
+              ? 'Before 20 January 2012, Raw Satellite shows original MODIS values and Harmonized adjusts them to the VIIRS scale. From that date, the map prefers VIIRS FRP per cell and the calendar prefers VIIRS per daily metric. Each uses adjusted MODIS when the corresponding VIIRS value is unavailable.'
+              : 'In the demo, Raw and Harmonized show different MODIS values before 2012. From 2012 both show the simulated VIIRS values on the map and calendar.')+(!researchCalibration.weekly_applicable?
+                ' Weekly totals use the existing calibration. E21 models require daily regional Aqua features, full UTC calendar months, or matched spatial pairs.':'')}/>
+          </div>
+          <Segmented label="Intercalibration mode" value={harmonized?'harmonized':'raw'} onChange={value=>onCalibration(value==='harmonized')}
+            items={[{value:'raw',label:'Raw Satellite'},{value:'harmonized',label:'Harmonized'}]}/>
+      </div>
       <div className="timeline-player">
         <div className="timeline-controls">
           <Button aria-label="Previous week" title="Previous week" onClick={()=>chooseWeek(value-1)}><SkipBack size={14}/></Button>

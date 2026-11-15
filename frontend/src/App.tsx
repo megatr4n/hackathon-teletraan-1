@@ -1,9 +1,9 @@
 import { startTransition, useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react'
 import { rankQuietMonths } from './seasonalHotspots'
 import * as Dialog from '@radix-ui/react-dialog'
-import { Activity, ArrowDown, ArrowDownToLine, ArrowUpRight, Bookmark, BookmarkPlus, Camera as CameraIcon, Circle, ChevronLeft, ChevronRight, Clock3, CodeXml, Crosshair, Database, FileText, Film, Focus as FocusIcon, Grid2X2, Layers3, Lasso, Leaf, MapPin, Ruler, Search, SlidersHorizontal, Satellite, TriangleAlert, X, Zap } from 'lucide-react'
+import { Activity, ArrowDown, ArrowDownToLine, ArrowUpRight, Bookmark, BookmarkPlus, Camera as CameraIcon, Circle, ChevronLeft, ChevronRight, Clock3, CodeXml, Crosshair, FileText, Film, Focus as FocusIcon, Grid2X2, Layers3, Lasso, Leaf, MapPin, Ruler, Search, SlidersHorizontal, Satellite, TriangleAlert, X, Zap } from 'lucide-react'
 import { areaPolygon, californiaOverviewBounds, cellPolygon, clampDate, doy, firstDate, maxCircleRadius, number, prettyDate, territories, type Aoi, type Cell, type Coord, type MapBounds } from './data'
-import { calibration, calibrationAccuracy, researchCalibration } from './calibration'
+import { calibration, calibrationAccuracy } from './calibration'
 import { cellObservations, dailyEstimates, dailyStats, dateIndex, periodStats, viirsStart } from './estimates'
 import { calendarWeeks, datesInRange, nextWeekDate, sumMapCells, summarizeWeek, weekIndex, weekRange } from './calendarWeeks'
 import { archiveDates, observations } from './observations'
@@ -526,16 +526,6 @@ export function App() {
             <p className="period-coefficient">FRP ≥ 7 days <b>{calibration.periodFrp[pass].toFixed(3)}</b></p>
           </div>
         </section>
-        <section className="filter-section calibration-controls">
-          <h3><Layers3 size={14}/>Intercalibration
-            <InfoTip label="Intercalibration" help={(historical
-              ? 'Before 20 January 2012, Raw Satellite shows original MODIS values and Harmonized adjusts them to the VIIRS scale. From that date, the map prefers VIIRS FRP per cell and the calendar prefers VIIRS per daily metric. Each uses adjusted MODIS when the corresponding VIIRS value is unavailable.'
-              : 'In the demo, Raw and Harmonized show different MODIS values before 2012. From 2012 both show the simulated VIIRS values on the map and calendar.')+(!researchCalibration.weekly_applicable?
-                ' Weekly totals use the existing calibration. E21 models require daily regional Aqua features, full UTC calendar months, or matched spatial pairs.':'')}/>
-          </h3>
-          <Segmented label="Intercalibration mode" value={harmonized?'harmonized':'raw'} onChange={value=>setSettings(current=>({...current,harmonized:value==='harmonized'}))}
-            items={[{value:'raw',label:<><Database size={13}/> Raw Satellite</>},{value:'harmonized',label:'Harmonized'}]}/>
-        </section>
       </div>
     </>
   }
@@ -701,7 +691,8 @@ export function App() {
 
     <Timeline date={date} daySelected={hasSelectedDay} from={from} to={to} playing={playing}
       onPlay={()=>{stopTour(false);setSettings(current=>({...current,granularity:undefined}));setPlaying(value=>!value)}}
-      onDay={value=>selectDate(value,true)} onWeek={value=>selectDate(value,false,false)} series={series} historicalCalendar={historicalCalendar} historyReady={Boolean(actual.days)} harmonized={harmonized} onRange={range} metric={metric} view={calendarView}
+      onDay={value=>selectDate(value,true)} onWeek={value=>selectDate(value,false,false)} series={series} historicalCalendar={historicalCalendar} historyReady={Boolean(actual.days)} harmonized={harmonized}
+      onCalibration={value=>setSettings(current=>({...current,harmonized:value}))} onRange={range} metric={metric} view={calendarView}
       onMetric={value=>setSettings(current=>({...current,metric:value}))} onView={value=>setSettings(current=>({...current,calendarView:value}))}/>
     </div>
     <footer className="footer mono"><span><span className="live-dot"/> {historical?'HISTORICAL TELEMETRY':'DEMO TELEMETRY'} <i/> KEPLER.GL</span><span><TriangleAlert size={12}/> {historical?'NASA FIRMS OBSERVATIONS':'SYNTHETIC FIRE OBSERVATIONS'}</span></footer>
