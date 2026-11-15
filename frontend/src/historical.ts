@@ -70,7 +70,39 @@ type CellRow = Metrics & {
 
 export const gridParams='square_km=3'
 
-export function useHistorical(enabled:boolean, request:string, date:string) {
+export async function loadHistoricalSelection(request:string,signal:AbortSignal):Promise<Selection> {
+  const response=await historicalFetch('/queries',{
+    method:'POST',headers:{'Content-Type':'application/json'},body:request,signal,
+  })
+  return response.json()
+}
+
+export async function loadHistoricalCalendar(queryId:string,signal:AbortSignal):Promise<Day[]> {
+  const response=await historicalFetch('/queries/'+queryId+'/calendar',{signal})
+  const calendar:{days:Day[]}=await response.json()
+  return calendar.days
+}
+
+export async function loadHistoricalCells(queryId:string,date:string,signal:AbortSignal) {
+  const base='/queries/'+queryId+'/days/'+date+'/cells?'+gridParams+'&limit=5000'
+  const rows:CellRow[]=[]
+  let cursor:string|null=null
+  do{
+    const response=await historicalFetch(base+(cursor?'&cursor='+encodeURIComponent(cursor):''),{signal})
+    const result:{cells:CellRow[];next_cursor:string|null}=await response.json()
+    rows.push(...result.cells)
+    cursor=result.next_cursor
+  }while(cursor&&rows.length<20000)
+  return {rows,complete:cursor===null}
+}
+
+export type PreparedHistory = {
+  selection:Selection
+  days:Day[]
+  cells:{date:string; rows:CellRow[]; complete:boolean}
+}
+
+export function useHistorical(enabled:boolean, request:string, date:string, prepared?:PreparedHistory) {
   const [query,setQuery]=useState<{key:string; days:Day[]}|null>(null)
   const [created,setCreated]=useState<{key:string; selection:Selection}|null>(null)
   const [map,setMap]=useState<{key:string; rows:CellRow[]; complete:boolean}|null>(null)
@@ -78,35 +110,32 @@ export function useHistorical(enabled:boolean, request:string, date:string) {
   const [error,setError]=useState<{key:string; message:string}|null>(null)
   const [attempt,retry]=useState(0)
   const key=request+'\n'+attempt
-  const current=enabled&&query?.key===key?query:null
-  const selection=enabled&&created?.key===key?created.selection:undefined
+  const days=enabled?(prepared?.days??(query?.key===key?query.days:undefined)):undefined
+  const selection=enabled?(prepared?.selection??(created?.key===key?created.selection:undefined)):undefined
   const mapKey=key+'\n'+date
-  const visible=enabled&&map?.key===mapKey?map:null
+  const preparedCells=prepared?.cells.date===date?prepared.cells:undefined
+  const visible=enabled?(preparedCells??(map?.key===mapKey?map:undefined)):undefined
   useEffect(()=>{
-    if(!enabled)return
+    if(!enabled||prepared)return
     const controller=new AbortController()
     const signal=controller.signal
     const run=async()=>{
-      const response=await historicalFetch('/queries',{
-        method:'POST',headers:{'Content-Type':'application/json'},body:request,signal,
-      })
-      const selection:Selection=await response.json()
+      const selection=await loadHistoricalSelection(request,signal)
       if(!signal.aborted)setCreated({key,selection})
     }
     const timer=window.setTimeout(()=>void run().catch(problem=>{
       if(!signal.aborted)setError({key,message:String(problem.message)})
     }),200)
     return ()=>{clearTimeout(timer);controller.abort()}
-  },[enabled,key,request])
+  },[enabled,key,request,prepared])
   const queryId=selection?.query_id
-  const calendarReady=Boolean(current)
+  const calendarReady=Boolean(days)
   useEffect(()=>{
     if(!queryId||calendarReady)return
     const controller=new AbortController()
     const signal=controller.signal
-    void historicalFetch('/queries/'+queryId+'/calendar',{signal})
-      .then(response=>response.json())
-      .then(calendar=>{if(!signal.aborted)setQuery({key,days:calendar.days})})
+    void loadHistoricalCalendar(queryId,signal)
+      .then(days=>{if(!signal.aborted)setQuery({key,days})})
       .catch(problem=>{if(!signal.aborted)setError({key,message:String(problem.message)})})
     return ()=>controller.abort()
   },[queryId,calendarReady,key])
@@ -120,27 +149,19 @@ export function useHistorical(enabled:boolean, request:string, date:string) {
     return ()=>controller.abort()
   },[queryId,date,mapKey,calendarReady])
   useEffect(()=>{
-    if(!enabled||!queryId)return
+    if(!enabled||!queryId||preparedCells)return
     const controller=new AbortController()
     const signal=controller.signal
     const run=async()=>{
-      const base='/queries/'+queryId+'/days/'+date+'/cells?'+gridParams+'&limit=5000'
-      const rows:CellRow[]=[]
-      let cursor:string|null=null
-      do{
-        const response=await historicalFetch(base+(cursor?'&cursor='+encodeURIComponent(cursor):''),{signal})
-        const result:{cells:CellRow[];next_cursor:string|null}=await response.json()
-        rows.push(...result.cells)
-        cursor=result.next_cursor
-      }while(cursor&&rows.length<20000)
-      if(!signal.aborted)setMap({key:mapKey,rows,complete:cursor===null})
+      const cells=await loadHistoricalCells(queryId,date,signal)
+      if(!signal.aborted)setMap({key:mapKey,...cells})
     }
     void run().catch(problem=>{
       if(!signal.aborted)setError({key:mapKey,message:String(problem.message)})
     })
     return ()=>controller.abort()
-  },[enabled,queryId,date,mapKey])
-  return {selection, days:current?.days, day:current?.days.find(row=>row.date===date)??(activeDay?.key===mapKey?activeDay.value:undefined),
+  },[enabled,queryId,date,mapKey,preparedCells])
+  return {selection, days, day:days?.find(row=>row.date===date)??(activeDay?.key===mapKey?activeDay.value:undefined),
     rows:visible?.rows, complete:visible?.complete,
     error:error?.key===key||error?.key===mapKey?error.message:null, retry:()=>retry(value=>value+1)}
 }
