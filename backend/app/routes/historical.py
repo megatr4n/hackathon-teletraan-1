@@ -155,6 +155,12 @@ class SummaryResponse(Provenance):
     platforms_summary: list[PlatformSummary]
 
 
+class ReportResponse(Provenance):
+    day: CalendarDay
+    period: list[PlatformSummary]
+    methodology: dict
+
+
 @dataclass(eq=False)
 class Selection:
     request: SelectionRequest
@@ -422,3 +428,16 @@ def summarize(selection, start=None, end=None):
 def summary(query_id: str):
     selection = get_selection(query_id)
     return {**selection.metadata(), "platforms_summary": summarize(selection)}
+
+
+@router.get("/queries/{query_id}/report-data", response_model=ReportResponse)
+def report_data(query_id: str, date: date, start: date | None = None, end: date | None = None):
+    selection = get_selection(query_id, date)
+    if start:
+        get_selection(query_id, start)
+    if end:
+        get_selection(query_id, end)
+    if start and end and start > end:
+        raise failure(422, "invalid_report_period", "The report start must precede its end")
+    return {**selection.metadata(), "day": annotate_day(date, calendar_rows(selection)[date], calendar_scores(selection)),
+            "period": summarize(selection, start, end), "methodology": methodology()}
