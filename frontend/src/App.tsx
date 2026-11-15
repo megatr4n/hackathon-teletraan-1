@@ -194,7 +194,7 @@ export function App() {
   },[game.open,orbiting,settings])
   const historical=historicalApi!==undefined&&!game.open
   const viirs=date>=(historical?snppArchiveStart:viirsStart)
-  const zonesRequested=historical&&showFireZones
+  const zonesRequested=historical&&showFireZones&&!orbiting
   const archive=useHistorical(historical,historicalRequest(settings),date)
   const fireZones=useFireZones(zonesRequested&&(archive.selection||archive.error)
     ?JSON.stringify({area:historicalArea(settings)}):undefined,archive.selection?.dataset_manifest_sha256)

@@ -608,7 +608,7 @@ export function MapStage({focus,date,cells,loadingCells,harmonized,aoi,tool,onAr
         <Button help="Switch between an overhead view and a tilted view." aria-label="Toggle 2D / 3D" aria-pressed={camera.pitch>1} onClick={()=>changeCamera({pitch:camera.pitch>1?0:50},550)}><Box size={14}/>{camera.pitch>1?'3D':'2D'}</Button>
         <Button help="Switch between the basemap and satellite imagery." aria-label="Switch Map / Sat" aria-pressed={options.satellite} onClick={()=>onOptions({...options,satellite:!options.satellite})}>{options.satellite?<Satellite size={16}/>:<MapIcon size={16}/>}</Button>
         <Button help="Show or hide the grid used to aggregate nearby fire detections." aria-label="Toggle 3×3 km grid" aria-pressed={options.grid} onClick={()=>onOptions({...options,grid:!options.grid})}><Grid3X3 size={16}/></Button>
-        {historical&&<Button help="Show areas with recurring satellite fire detections across the archive." aria-label="Historical fire zones" aria-pressed={zonesRequested}
+        {historical&&<Button help="Show areas with recurring satellite fire detections across the archive." aria-label="Historical fire zones" aria-pressed={zonesRequested} disabled={orbiting}
           onClick={onToggleFireZones}><ShieldAlert size={16}/></Button>}
       </div>
       <div className="map-control-group">
