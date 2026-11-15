@@ -195,6 +195,11 @@ class CellsResponse(Provenance):
 
 
 class ReportResponse(Provenance):
+    report_start: date
+    report_end: date
+    area: dict
+    area_bounds: tuple[float, float, float, float]
+    series: list[CalendarDay]
     day: CalendarDay
     period: list[PlatformSummary]
     methodology: dict
@@ -498,14 +503,20 @@ def summary(query_id: str):
 @router.get("/queries/{query_id}/report-data", response_model=ReportResponse)
 def report_data(query_id: str, date: date, start: date | None = None, end: date | None = None):
     selection = get_selection(query_id, date)
-    if start:
-        get_selection(query_id, start)
-    if end:
-        get_selection(query_id, end)
-    if start and end and start > end:
+    start = start or selection.request.start
+    end = end or selection.request.end
+    get_selection(query_id, start)
+    get_selection(query_id, end)
+    if start > end:
         raise failure(422, "invalid_report_period", "The report start must precede its end")
-    return {**selection.metadata(), "day": annotate_day(date, calendar_rows(selection)[date], calendar_scores(selection)),
+    rows = calendar_rows(selection)
+    scores = calendar_scores(selection)
+    return {**selection.metadata(), "report_start": start, "report_end": end,
+            "area": selection.request.area.model_dump(mode="json"), "area_bounds": selection.bounds,
+            "series": [annotate_day(day, row, scores) for day, row in rows.items() if start <= day <= end],
+            "day": annotate_day(date, rows[date], scores),
             "period": summarize(selection, start, end), "methodology": methodology()}
+
 
 
 def cell_shape(cell_id):

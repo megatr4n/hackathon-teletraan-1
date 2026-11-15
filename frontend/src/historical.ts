@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { MultiPolygon, Polygon } from 'geojson'
 import { areaPolygon, firstDate, lastDate, type MapCell, type Coord, type Pass } from './data'
-import { calibration, periodFrpMinimumDays } from './calibration'
+import { calibration, harmonizeHistoricalCount, historicalCountPlatform, periodFrpMinimumDays } from './calibration'
 import type { Metric, Snapshot } from './pins'
 import { datesInRange } from './calendarWeeks'
 
@@ -199,7 +199,8 @@ export function actualDay(day:Day|undefined, pass:Pass) {
     const value=row.by_pass[phase]?.frp_sum_mw
     return typeof value==='number'?value*calibration.dailyFrp[phase]:null
   })))
-  return {raw,rawCount,corrected,correctedCount:rawCount===null?null:rawCount*calibration.hotspots[pass],
+  const correctedCount=day?harmonizeHistoricalCount(day.date,modis,pass).value:null
+  return {raw,rawCount,corrected,correctedCount,
     viirs:viirs?.frp_sum_mw??null,viirsCount:viirs?.detection_count??null}
 }
 
@@ -213,10 +214,12 @@ export function historicalCalendarValue(date:string, day:ActualDay|undefined, me
   }
   if(afterTransition||harmonized){
     const modisEstimate=day?.[count?'correctedCount':'corrected']??null
-    const missing=afterTransition?'No VIIRS or MODIS value':'No MODIS value to harmonize'
+    const platform=historicalCountPlatform(date)==='terra'?'Terra MODIS':'Aqua MODIS'
+    const missing=count?(afterTransition?'No VIIRS or '+platform+' value':'No '+platform+' value to harmonize')
+      :afterTransition?'No VIIRS or MODIS value':'No MODIS value to harmonize'
     return {
       value:modisEstimate,
-      source:'Harmonized MODIS (estimate)',
+      source:count?'Harmonized '+platform+' (estimate)':'Harmonized MODIS (estimate)',
       details:modisEstimate===null?missing:undefined,
     }
   }

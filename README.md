@@ -2,6 +2,8 @@
 
 Wildfire mission control and historical NASA FIRMS data access. See the
 [frontend setup](frontend/README.md) and [API query storage guide](backend/HISTORICAL_QUERIES.md).
+The [historical report guide](docs/HISTORICAL_REPORT.md) documents PDF charts,
+harmonized count estimates and the reproducible evidence export.
 
 ## Historical data
 

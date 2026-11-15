@@ -31,6 +31,22 @@ export const calibration={
 export const periodFrpMinimumDays=7
 export const calibrationAccuracy=coefficients.calibration_models.count_harmonization.empirical_metrics
 
+export const aquaArchiveStart='2002-07-04'
+
+export function historicalCountPlatform(date:string):'terra'|'aqua' {
+  return date<aquaArchiveStart?'terra':'aqua'
+}
+
+export function harmonizeHistoricalCount(
+  date:string,
+  records:readonly {platform:string; detection_count:number|null}[],
+  pass:Pass,
+) {
+  const platform=historicalCountPlatform(date)
+  const count=records.find(record=>record.platform===platform)?.detection_count??null
+  return {platform,value:count===null?null:count*calibration.hotspots[pass]}
+}
+
 export function dailyFrp(day:number,night:number) {
   return day*calibration.dailyFrp.day + night*calibration.dailyFrp.night
 }
