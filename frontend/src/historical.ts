@@ -101,7 +101,6 @@ export function useHistorical(enabled:boolean, request:string, date:string, show
   },[enabled,key,request])
   const queryId=selection?.query_id
   const calendarReady=Boolean(current)
-  const calendarFailed=Boolean(queryId&&error?.key===key)
   useEffect(()=>{
     if(!queryId||calendarReady)return
     const controller=new AbortController()
@@ -113,16 +112,16 @@ export function useHistorical(enabled:boolean, request:string, date:string, show
     return ()=>controller.abort()
   },[queryId,calendarReady,key])
   useEffect(()=>{
-    if(!queryId||!calendarFailed||calendarReady)return
+    if(!queryId||calendarReady)return
     const controller=new AbortController()
     void historicalFetch('/queries/'+queryId+'/days/'+date+'?include_z_score=false',{signal:controller.signal})
       .then(response=>response.json())
       .then(value=>{if(!controller.signal.aborted)setActiveDay({key:mapKey,value})})
-      .catch(()=>{}) // Keep the calendar error and its retry action visible.
+      .catch(()=>{}) // The calendar can still supply the selected day's summary.
     return ()=>controller.abort()
-  },[queryId,date,mapKey,calendarReady,calendarFailed])
+  },[queryId,date,mapKey,calendarReady])
   useEffect(()=>{
-    if(!showDailyCells||!queryId||(!calendarReady&&!calendarFailed)||visible)return
+    if(!showDailyCells||!queryId||visible)return
     const controller=new AbortController()
     const signal=controller.signal
     const run=async()=>{
@@ -138,10 +137,10 @@ export function useHistorical(enabled:boolean, request:string, date:string, show
       if(!signal.aborted)setMap({key:mapKey,rows,complete:cursor===null})
     }
     void run().catch(problem=>{
-      if(!signal.aborted&&!calendarFailed)setError({key:mapKey,message:String(problem.message)})
+      if(!signal.aborted)setError({key:mapKey,message:String(problem.message)})
     })
     return ()=>controller.abort()
-  },[showDailyCells,queryId,date,mapKey,calendarReady,calendarFailed,visible])
+  },[showDailyCells,queryId,date,mapKey,visible])
   return {selection, days:current?.days, day:current?.days.find(row=>row.date===date)??(activeDay?.key===mapKey?activeDay.value:undefined),
     rows:visible?.rows, complete:visible?.complete,
     error:error?.key===key||error?.key===mapKey?error.message:null, retry:()=>retry(value=>value+1)}
