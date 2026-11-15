@@ -8,6 +8,7 @@ import re
 from datetime import date
 from functools import lru_cache
 from pathlib import Path
+from threading import local
 
 import shapely
 import yaml
@@ -174,3 +175,61 @@ def geometry_for(area):
                     raise ValueError("Split polygons crossing the antimeridian into a MultiPolygon")
     shapely.prepare(polygon)
     return polygon, polygon.bounds
+
+
+PASSES = {"day": "D", "night": "N"}
+
+
+def records_sql(release, selection, start, end, db, sensor=None):
+    request = selection.request
+    requested = [platform for platform in request.platforms if sensor is None or SENSOR[platform] == sensor]
+    paths = release.paths(requested, start, end, "observations")
+    if not paths:
+        return None, []
+    west, south, east, north = selection.bounds
+    filters = [
+        "obs_date BETWEEN ? AND ?", "longitude BETWEEN ? AND ?", "latitude BETWEEN ? AND ?"
+    ]
+    args = [paths, start, end, west, east, south, north]
+    if request.area.kind == "circle":
+        longitude, latitude = request.area.center
+        filters.append("""
+            pow(sin(radians(latitude - ?) / 2), 2)
+            + cos(radians(latitude)) * cos(radians(?))
+              * pow(sin(radians(longitude - ?) / 2), 2) <= ?
+        """)
+        args.extend([latitude, latitude, longitude, math.sin(request.area.radius_km / 6371.0088 / 2) ** 2])
+    else:
+        geometry = shapely.to_wkb(selection.polygon)
+        worker = local()
+
+        def in_area(x, y):
+            # DuckDB may execute Arrow batches on different threads.
+            if not hasattr(worker, "polygon"):
+                worker.polygon = shapely.from_wkb(geometry)
+                shapely.prepare(worker.polygon)
+            return shapely.intersects_xy(worker.polygon, x.to_numpy(), y.to_numpy())
+
+        db.create_function("in_area", in_area, ["DOUBLE", "DOUBLE"], "BOOLEAN", type="arrow")
+        filters.append("in_area(longitude, latitude)")
+    if request.orbit_pass != "all":
+        filters.append("upper(daynight) = ?")
+        args.append(PASSES[request.orbit_pass])
+
+    platforms = ", ".join("?" for _ in requested)
+    args.extend(requested)
+    return f"""
+        WITH points AS (
+            SELECT obs_date, longitude, latitude,
+                CASE
+                    WHEN sensor = 'viirs-snpp' THEN 'snpp'
+                    WHEN lower(trim(satellite)) IN ('terra', 't') THEN 'terra'
+                    WHEN lower(trim(satellite)) IN ('aqua', 'a') THEN 'aqua'
+                END AS platform,
+                CASE upper(daynight) WHEN 'D' THEN 'day' WHEN 'N' THEN 'night' ELSE 'unknown' END AS pass,
+                CASE WHEN isfinite(frp) AND frp > 0 AND invalid_frp_source IS NULL THEN frp END AS valid_frp
+            FROM read_parquet(?, hive_partitioning=true)
+            WHERE {" AND ".join(filters)}
+        )
+        SELECT * FROM points WHERE platform IN ({platforms})
+    """, args
