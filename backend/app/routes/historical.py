@@ -136,6 +136,25 @@ class DayResponse(Provenance, CalendarDay):
     z_score_method: str
 
 
+class Peak(BaseModel):
+    date: date
+    frp_sum_mw: float
+
+
+class PlatformSummary(Counts):
+    platform: Platform
+    requested_days: int
+    days_with_records: int
+    days_with_confirmed_coverage: int | None
+    days_with_valid_metric: int
+    mean_observed_daily_frp_mw: float | None
+    peak_frp: Peak | None
+
+
+class SummaryResponse(Provenance):
+    platforms_summary: list[PlatformSummary]
+
+
 @dataclass(eq=False)
 class Selection:
     request: SelectionRequest
@@ -375,3 +394,31 @@ def day_stats(query_id: str, day: date, include_z_score: bool = True):
     scores = calendar_scores(selection) if include_z_score else None
     return {**selection.metadata(), "z_score_method": climatology.METHOD_ID,
             **annotate_day(day, row, scores)}
+
+
+def summarize(selection, start=None, end=None):
+    rows = [row for date, row in calendar_rows(selection).items()
+            if (start is None or date >= start) and (end is None or date <= end)]
+    summary = []
+    for index, platform in enumerate(selection.request.platforms):
+        values = [(row["date"], row["platforms"][index]) for row in rows]
+        observed = [entry for _, entry in values if entry["detection_count"] is not None]
+        valid = [(day, entry["frp_sum_mw"]) for day, entry in values if entry["frp_sum_mw"] is not None]
+        total = sum(amount for _, amount in valid) if valid else None
+        peak = max(valid, key=lambda pair: pair[1], default=None)
+        summary.append({
+            "platform": platform, "requested_days": len(rows), "days_with_records": len(observed),
+            "days_with_confirmed_coverage": None, "days_with_valid_metric": len(valid),
+            **metrics(sum(entry["detection_count"] for entry in observed) if observed else None,
+                      sum(entry["valid_frp_count"] for entry in observed),
+                      sum(entry["missing_frp_count"] for entry in observed), total),
+            "mean_observed_daily_frp_mw": total / len(valid) if valid else None,
+            "peak_frp": {"date": peak[0], "frp_sum_mw": peak[1]} if peak else None,
+        })
+    return summary
+
+
+@router.get("/queries/{query_id}/summary", response_model=SummaryResponse)
+def summary(query_id: str):
+    selection = get_selection(query_id)
+    return {**selection.metadata(), "platforms_summary": summarize(selection)}
