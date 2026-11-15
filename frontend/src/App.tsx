@@ -3,7 +3,7 @@ import { rankQuietMonths } from './seasonalHotspots'
 import * as Dialog from '@radix-ui/react-dialog'
 import { Activity, ArrowDown, ArrowDownToLine, ArrowUpRight, Bookmark, BookmarkPlus, Camera as CameraIcon, Circle, ChevronLeft, ChevronRight, Clock3, CodeXml, Crosshair, Database, FileText, Focus as FocusIcon, Grid2X2, Layers3, Lasso, Leaf, MapPin, Puzzle as PuzzleIcon, Ruler, Search, SlidersHorizontal, Satellite, TriangleAlert, X, Zap } from 'lucide-react'
 import { areaPolygon, cellPolygon, clampDate, doy, firstDate, maxCircleRadius, number, prettyDate, territories, type Aoi, type Cell, type Coord } from './data'
-import { calibration, calibrationAccuracy } from './calibration'
+import { calibration, calibrationAccuracy, researchCalibration } from './calibration'
 import { cellObservations, dailyEstimates, dailyStats, dateIndex, periodStats, viirsStart } from './estimates'
 import { calendarWeeks, datesInRange, nextWeekDate, sumMapCells, summarizeWeek, weekIndex, weekRange } from './calendarWeeks'
 import { archiveDates, observations } from './observations'
@@ -538,9 +538,10 @@ export function App() {
         </section>
         <section className="filter-section calibration-controls">
           <h3><Layers3 size={14}/>Intercalibration
-            <InfoTip label="Intercalibration" help={historical
+            <InfoTip label="Intercalibration" help={(historical
               ? 'Before 20 January 2012, Raw Satellite shows original MODIS values and Harmonized adjusts them to the VIIRS scale. From that date, the map prefers VIIRS FRP per cell and the calendar prefers VIIRS per daily metric. Each uses adjusted MODIS when the corresponding VIIRS value is unavailable.'
-              : 'In the demo, Raw and Harmonized show different MODIS values before 2012. From 2012 both show the simulated VIIRS values on the map and calendar.'}/>
+              : 'In the demo, Raw and Harmonized show different MODIS values before 2012. From 2012 both show the simulated VIIRS values on the map and calendar.')+(!researchCalibration.weekly_applicable?
+                ' Weekly totals use the existing calibration. E21 models require daily regional Aqua features, full UTC calendar months, or matched spatial pairs.':'')}/>
           </h3>
           <Segmented label="Intercalibration mode" value={harmonized?'harmonized':'raw'} onChange={value=>setSettings(current=>({...current,harmonized:value==='harmonized'}))}
             items={[{value:'raw',label:<><Database size={13}/> Raw Satellite</>},{value:'harmonized',label:'Harmonized'}]}/>

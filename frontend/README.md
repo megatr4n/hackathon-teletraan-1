@@ -31,7 +31,7 @@ uses observed day and period metrics from the same query.
 
 In demo mode, MODIS and VIIRS values, hotspot counts and exports use synthetic observations. The FastAPI service remains a separate part of the repository. VIIRS is shown from 2012 onward, and its period averages use the covered days only. The same filtered daily observations drive the map, calendar, selected-day statistics and exports.
 
-Update `../config/modis_viirs_coefficients.csv` and rebuild to change calibration. `src/calibration.ts` validates and maps the shared CSV headers. The original supplied row includes an extra empty field before the two daily FRP values, which the parser accepts.
+Update `../config/modis_viirs_coefficients.csv` and rebuild to change calibration. `src/calibration.ts` validates and maps the shared CSV headers. The shipped CSV uses the delimiter alignment verified by the E21 research audit.
 
 - The daily map, calendar, selected-day analytics and exports use the day and night FRP multipliers. For All Passes the app adds the separately calibrated day and night FRP.
 - Inclusive ranges of seven days or more apply the CSV's general FRP coefficient for the selected pass. Shorter ranges aggregate the calibrated daily values.
@@ -44,6 +44,8 @@ The two estimated quantities use the selected day's FRP series.
 - CO₂ uses integrated fire radiative energy, 0.368 kg of dry matter per MJ and 1.626 kg of CO₂ per kg of dry matter. The demo scales its scenario's reference FRE by the selected FRP. Real emissions depend on the fuel and the observed FRP time series.
 
 Methods: [NASA JPL MASTER FRP ATBD](https://masterprojects.jpl.nasa.gov/downloads/docs/MASTER_L3_ATBD_ETF-FRP_20251219_ver2.pdf) and [Kaiser et al. 2012, Global Fire Assimilation System](https://bg.copernicus.org/articles/9/527/2012/).
+
+The E21 registry in `../config/coefficients.json` records the numeric coefficients and scope from the verified research archive. Its daily FRP candidates require Aqua source features for an exact, screened research bounding box in 2012–2025. Its count model targets full UTC months of filtered records. The spatial model requires matched observation pairs. The weekly calendar and grid use the existing prototype calibration, with sensor selection performed per day.
 
 ## Geographic data
 

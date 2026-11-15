@@ -15,9 +15,7 @@ function loadCoefficients(csv:string) {
     new Set(header).size!==columns.length || columns.some(column=>!header.includes(column))) {
     throw new Error('Expected one MODIS/VIIRS coefficient row with the required headers.')
   }
-  // The supplied CSV has an extra separator between the general and daily FRP columns.
-  const values = record.length===header.length+1 && record[6]==='' && header[6]==='k_frp_daily_matched_day'
-    ? [...record.slice(0,6),...record.slice(7)] : record
+  const values=record
   if (values.length!==header.length || values.some(value=>!value || !Number.isFinite(Number(value)) || Number(value)<=0)) {
     throw new Error('Expected a positive value for every MODIS/VIIRS coefficient.')
   }
@@ -36,3 +34,5 @@ export const calibrationAccuracy=coefficients.calibration_models.count_harmoniza
 export function dailyFrp(day:number,night:number) {
   return day*calibration.dailyFrp.day + night*calibration.dailyFrp.night
 }
+
+export const researchCalibration=coefficients.research_candidates.e21
