@@ -17,7 +17,7 @@ import type { HistoricalReport } from './statisticalReport'
 import { historicalApi, historicalFetch, gridParams, historicalCells, historicalRequest, useHistorical, actualDay, historicalCalendarValue, scoreDetails, actualPeriod, snppArchiveStart } from './historical'
 import { snapshotFromUrl, updateViewUrl } from './viewLink'
 
-import { cinematicTrack, tourRegions, type CameraCommand } from './cameraTour'
+import { cinematicTrack, tourRegions, type CameraCommand, type CameraDestination } from './cameraTour'
 function UtcClock() {
   const [time,setTime]=useState(()=>new Date().toISOString().slice(11,19))
   useEffect(()=>{
@@ -257,21 +257,23 @@ export function App() {
     return ()=>clearTimeout(timer)
   },[message])
 
+  function navigateTo(target:CameraDestination,apply:()=>void,globe:boolean,duration:number) {
+    if(globe&&!window.matchMedia('(prefers-reduced-motion: reduce)').matches){
+      setCommand({globe:target,startedAt:performance.now()})
+      startTransition(apply)
+    }else{
+      apply()
+      setCommand({camera:target,duration:globe?0:duration})
+    }
+  }
+
   function chooseRegion(next:Region,point?:Coord,globe=false) {
     stopTour(false)
     const nextFocus=focusForRegion(next,date,point)
     const nextMode=next.kind==='eco'?'ecoregions':'countries'
     setTool(null);setOrbiting(false);setPlaying(false)
     const target={lon:nextFocus.center[0],lat:nextFocus.center[1],zoom:nextFocus.zoom}
-    const animate=globe&&!window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    const applyRegion=()=>setSettings(current=>({...current,focus:nextFocus,region:next,areaMode:nextMode,aoi:null,query:next.name}))
-    if(animate){
-      setCommand({globe:target,startedAt:performance.now()})
-      startTransition(applyRegion)
-    }else{
-      applyRegion()
-      setCommand({camera:target,duration:globe?0:880})
-    }
+    navigateTo(target,()=>setSettings(current=>({...current,focus:nextFocus,region:next,areaMode:nextMode,aoi:null,query:next.name})),globe,880)
   }
   function goToPuzzleRegion(puzzle:Puzzle) {
     const next=puzzleFocus(puzzle)
@@ -377,8 +379,8 @@ export function App() {
     setHasSelectedDay(true)
     const snapshot=pin.snapshot
     const restoredFocus=snapshot.region?.kind==='country'?{...snapshot.focus,area:'Country or territory'}:snapshot.focus
-    setSettings({...snapshot,focus:restoredFocus});setTool(null);setMeasuring(false);setOrbiting(false);setPlaying(false);setPinMenu(false)
-    setCommand({camera:pin.snapshot.camera,duration:850})
+    setTool(null);setMeasuring(false);setOrbiting(false);setPlaying(false);setPinMenu(false)
+    navigateTo(snapshot.camera,()=>setSettings({...snapshot,focus:restoredFocus}),true,0)
     setMessage('Opened '+pin.name)
   }
   async function exportReport() {
