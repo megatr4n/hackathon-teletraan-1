@@ -80,3 +80,8 @@ def geography(kind: CatalogKind, identifier: str, parent_id: str | None = None):
         return {"feature": data.catalog_feature(kind, identifier, parent_id), "geometry_version": data.GEO_VERSION}
     except LookupError as error:
         raise failure(404, "unknown_territory", str(error)) from error
+
+
+@router.get("/presets")
+def presets():
+    return {"items": data.presets(), "geometry_version": data.GEO_VERSION}
