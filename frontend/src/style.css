@@ -63,7 +63,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 .algorithm-switch { margin-left:auto; flex:none }
 .algorithm-switch .segment { padding-inline:10px }
 .algorithm-switch .segment[data-state=on] { background:#182b2a; border-color:#34544b; color:#a3dec1 }
-.algorithm-tag { color:#91c9b2; padding:1px 4px; font-size:9px; border:1px solid #42645b; border-radius:3px }
 .country-search { display:flex; align-items:center; gap:10px; position:relative; max-width:420px; flex:1; min-width:120px; height:34px; padding:0 10px; border-radius:5px; border:1px solid #394655; background:#0e131c; color:#92a2b4 }
 .country-search:focus-within { border-color:#b87556 }
 .country-search input { width:100%; min-width:0; outline:none; color:#eff3f8; font-size:12px }
@@ -327,7 +326,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
   .command-divider { display:none }
   .mode-switch .segment,.algorithm-switch .segment { padding:4px 5px; min-height:25px; font-size:9px; gap:4px }
   .mode-switch svg,.algorithm-switch svg { width:12px }
-  .algorithm-tag { font-size:7px }
   .scenario-list,.country-search { order:3; flex:1 0 100%; max-width:100% }
   .workbench { display:flex; flex-direction:column }
   .map-stage { order:-1; min-height:455px }

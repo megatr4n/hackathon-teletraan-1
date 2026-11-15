@@ -495,7 +495,7 @@ export function App() {
             <InfoTip label="Intercalibration" help="For the map and the calendar’s fire power and hotspot counts, Raw Satellite shows original MODIS readings before 2012. Harmonized adjusts MODIS to the VIIRS scale. From 2012 onward, both modes use VIIRS when available and harmonized MODIS when VIIRS has no observations."/>
           </h3>
           <Segmented label="Intercalibration mode" value={harmonized?'harmonized':'raw'} onChange={value=>setSettings(current=>({...current,harmonized:value==='harmonized'}))}
-            items={[{value:'raw',label:<><Database size={13}/> Raw Satellite</>},{value:'harmonized',label:<>Harmonized <span className="algorithm-tag mono">E19</span></>}]}/>
+            items={[{value:'raw',label:<><Database size={13}/> Raw Satellite</>},{value:'harmonized',label:<>Harmonized</>}]}/>
         </section>
       </div>
     </>
