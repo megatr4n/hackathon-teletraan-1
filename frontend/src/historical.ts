@@ -201,3 +201,11 @@ export function historicalCells(rows:CellRow[], harmonized:boolean):MapCell[] {
       weight:visual.reduce((sum,row)=>sum+(row.detection_count??0),0),pass:visual.some(row=>row.pass==='day')?'day':'night'}
   })
 }
+
+export function scoreDetails(day:Day|undefined) {
+  if(!day||day.z_score_status==='not_requested')return 'Seasonal baseline not loaded'
+  if(day.z_score_status==='no_modis_frp')return 'No MODIS FRP reading'
+  if(day.z_score_status==='insufficient_reference_years')return `Only ${day.z_score_reference_years} reference years (minimum 8)`
+  if(day.z_score_status==='zero_reference_variance')return 'No variation in reference FRP'
+  return `${day.z_score_reference_days} reference days in ${day.z_score_reference_years} other years`
+}

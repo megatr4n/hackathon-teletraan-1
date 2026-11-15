@@ -13,7 +13,7 @@ import { Button, Segmented } from './ui'
 import { PuzzleDropdown } from './PuzzlePanels'
 import { puzzleFocus, type Puzzle } from './dailyPuzzle'
 import { useDailyPuzzle } from './useDailyPuzzle'
-import { historicalApi, historicalCells, historicalRequest, useHistorical } from './historical'
+import { historicalApi, historicalCells, historicalRequest, useHistorical, actualDay, historicalCalendarValue, scoreDetails } from './historical'
 import { snapshotFromUrl, updateViewUrl } from './viewLink'
 
 import { cinematicTrack, tourRegions, type CameraCommand } from './cameraTour'
@@ -183,6 +183,22 @@ export function App() {
   const historical=historicalPreviewEnabled&&historicalApi!==undefined&&!game.open
   const actual=useHistorical(historical,historicalRequest(settings),date)
   const cells=useMemo(()=>historical?historicalCells(actual.rows??[],harmonized):demoCells,[historical,actual.rows,harmonized,demoCells])
+
+
+  const observedDays=useMemo(()=>actual.days?.map(day=>({date:day.date,values:actualDay(day,pass)}))??[],[actual.days,pass])
+  const historicalCalendar=useMemo(()=>{
+    if(!historical)return undefined
+    const byDate=new Map(observedDays.map(day=>[day.date,day.values]))
+    const scores=metric==='z'?new Map(actual.days?.map(day=>[day.date,day])):undefined
+    if(actual.day&&!byDate.has(actual.day.date))byDate.set(actual.day.date,actualDay(actual.day,pass))
+    return archiveDates.map(day=>{
+      if(metric==='z'){
+        const row=scores?.get(day)
+        return {value:row?.z_score??null,source:'MODIS',details:scoreDetails(row)}
+      }
+      return historicalCalendarValue(day,byDate.get(day),metric,harmonized)
+    })
+  },[actual.day,actual.days,observedDays,historical,harmonized,metric,pass])
 
 
   useEffect(()=>{
@@ -507,7 +523,7 @@ export function App() {
     </div>
 
     <Timeline date={date} from={from} to={to} playing={playing} onPlay={()=>{stopTour(false);setHasSelectedDay(true);setPlaying(value=>!value)}}
-      onSelect={selectDate} series={series} harmonized={harmonized} onRange={range} metric={metric} view={calendarView}
+      onSelect={selectDate} series={series} historicalDays={historicalCalendar} historyReady={Boolean(actual.days)} harmonized={harmonized} onRange={range} metric={metric} view={calendarView}
       onMetric={value=>setSettings(current=>({...current,metric:value}))} onView={value=>setSettings(current=>({...current,calendarView:value}))}/>
     <footer className="footer mono"><span><span className="live-dot"/> DEMO TELEMETRY <i/> KEPLER.GL</span><span><TriangleAlert size={12}/> SYNTHETIC FIRE OBSERVATIONS</span></footer>
     {message&&<div className="toast" role="status">{message}</div>}
