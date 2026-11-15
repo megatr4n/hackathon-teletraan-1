@@ -1,4 +1,3 @@
-import { calibration } from './calibration'
 import { MercatorCoordinate, type CustomLayerInterface, type CustomRenderMethodInput, type Map } from 'maplibre-gl'
 import { offset, type MapCell } from './data'
 
@@ -76,13 +75,12 @@ export class FirePillars implements CustomLayerInterface {
     gl.bindVertexArray(null)
   }
 
-  update(cells: MapCell[], harmonized: boolean, animate: boolean) {
+  update(cells: MapCell[], animate: boolean) {
     if (!this.gl || !this.buffer) return
     const vertices: number[] = []
     for (const cell of cells) {
       if (cell.raw === null) continue
-      const frp = cell.raw * (harmonized ? calibration.dailyFrp[cell.pass] : 1)
-      const height = pillarHeightMeters(frp)
+      const height = pillarHeightMeters(cell.raw)
       const half = .72
       const coordinates = [[-half,-half],[half,-half],[half,half],[-half,half]]
         .map(([x,y]) => MercatorCoordinate.fromLngLat(offset(cell.center,x,y)))

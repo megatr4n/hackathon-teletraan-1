@@ -2,7 +2,6 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type
 import maplibregl, { type ExpressionSpecification, type GeoJSONSource, type RasterTileSource, type StyleSpecification } from 'maplibre-gl'
 import { Box, Grid3X3, Layers3, Map as MapIcon, Minus, Plus, Ruler, Satellite, ShieldAlert, Target } from 'lucide-react'
 import type { FeatureCollection, Geometry } from 'geojson'
-import { calibration } from './calibration'
 import { areaPolygon, cellPolygon, contains, coord, distance, offset, type Aoi, type MapCell, type Coord, type Focus } from './data'
 import { FirePillars } from './pillars'
 import { Button, InfoTip, frpHelp } from './ui'
@@ -23,7 +22,7 @@ const KeplerMap = lazy(() => loadKepler().then(module => ({default:module.Kepler
 
 export type Tool = 'circle' | 'lasso' | null
 type Props = {
-  focus:Focus; date:string; cells:MapCell[]; loadingCells:boolean; harmonized:boolean; aoi:Aoi|null; tool:Tool;
+  focus:Focus; date:string; cells:MapCell[]; weekly:boolean; loadingCells:boolean; aoi:Aoi|null; tool:Tool;
   onArea:(area:Aoi)=>void; onCirclePreviewRadius:(radius:number|null)=>void;
   command:CameraCommand|null; onCamera:(camera:Camera)=>void;
   options:MapOptions; onOptions:(options:MapOptions)=>void;
@@ -140,7 +139,7 @@ function hazardShape(center:Coord,x:number,y:number,rx:number,ry:number,z:number
   return {type:'Feature' as const,properties:{z},geometry:{type:'Polygon' as const,coordinates:[[...ring,ring[0]]]}}
 }
 
-export function MapStage({focus,date,cells,loadingCells,harmonized,aoi,tool,onArea,onCirclePreviewRadius,command,onCamera,options,onOptions,
+export function MapStage({focus,date,cells,loadingCells,weekly,aoi,tool,onArea,onCirclePreviewRadius,command,onCamera,options,onOptions,
   countries,admins,ecoregions,areaMode,selected,onRegion,measuring,orbiting,onTourEnd,historical,playing,
   zonesActive,zonesRequested,onToggleFireZones,fireZones}:Props) {
   const holder=useRef<HTMLDivElement>(null), map=useRef<maplibregl.Map|null>(null)
@@ -167,8 +166,8 @@ export function MapStage({focus,date,cells,loadingCells,harmonized,aoi,tool,onAr
   const commandedCamera=useRef<Camera|null>(null)
   const callbacks=useRef({onCamera,onRegion,areaMode,onTourEnd})
   callbacks.current={onCamera,onRegion,areaMode,onTourEnd}
-  const tourData=useRef({focus,cells,loadingCells,harmonized})
-  tourData.current={focus,cells,loadingCells,harmonized}
+  const tourData=useRef({focus,cells,loadingCells})
+  tourData.current={focus,cells,loadingCells}
   const style=useMemo(mapStyle,[])
 
   const changeCamera=useCallback((camera:Partial<Camera>,duration=0)=>setCameraToApply({camera,duration}),[])
@@ -241,10 +240,17 @@ export function MapStage({focus,date,cells,loadingCells,harmonized,aoi,tool,onAr
         commandedCamera.current=camera
         setKeplerCamera(camera)
       }
-      const destination='globe' in request?{...origin,...request.globe}:null
+      const bounds='bounds' in request?request.bounds:undefined
+      const canvas=instance.getCanvas()
+      const padding=Math.min(48,Math.floor(Math.min(canvas.clientWidth,canvas.clientHeight)/8))
+      const fitted=bounds?instance.cameraForBounds(bounds,{padding,bearing:0}):undefined
+      const fittedCenter=fitted?.center?maplibregl.LngLat.convert(fitted.center):undefined
+      const fittedCamera=fittedCenter&&fitted?.zoom!==undefined?
+        {lon:fittedCenter.lng,lat:fittedCenter.lat,zoom:fitted.zoom,bearing:0,pitch:0}:undefined
+      const destination='globe' in request?{...origin,...request.globe,...fittedCamera}:null
       if(destination)setSpaceCommand(request)
       const arrival=destination??track?.arrival??null
-      let shots:Shot[]|null='camera' in request?[{to:{...origin,...request.camera},ms:request.duration}]:null
+      let shots:Shot[]|null='camera' in request?[{to:{...origin,...request.camera,...fittedCamera},ms:request.duration}]:null
       let startTime:number|undefined
       let waitForGlobeFrom:number|undefined
       let regionalStartTime:number|undefined
@@ -283,7 +289,7 @@ export function MapStage({focus,date,cells,loadingCells,harmonized,aoi,tool,onAr
             return
           }
           const {clientWidth,clientHeight}=instance.getCanvas()
-          shots=hotspotShots(track.arrival,data.focus===track.focus?data.cells:[],data.harmonized,clientWidth,clientHeight,track.short)
+          shots=hotspotShots(track.arrival,data.focus===track.focus?data.cells:[],clientWidth,clientHeight,track.short)
           regionalStartTime=now
         }
         let from=arrival??origin
@@ -343,7 +349,7 @@ export function MapStage({focus,date,cells,loadingCells,harmonized,aoi,tool,onAr
     set('fires',collection(visibleCells.flatMap(cell=>{
       if(cell.raw===null)return []
       const item=cellPolygon(cell,.72)
-      return {...item,properties:{...item.properties,power:cell.raw*(harmonized?calibration.dailyFrp[cell.pass]:1)}}
+      return {...item,properties:{...item.properties,power:cell.raw}}
     })))
     set('fireCenters',collection(historical?visibleCells.map(cell=>({type:'Feature',properties:{detections:cell.weight},
       geometry:{type:'Point',coordinates:cell.center}})):[]))
@@ -354,11 +360,11 @@ export function MapStage({focus,date,cells,loadingCells,harmonized,aoi,tool,onAr
       [offset(focus.center,-4,0),offset(focus.center,-1.7,0)],[offset(focus.center,1.7,0),offset(focus.center,4,0)],
       [offset(focus.center,0,-4),offset(focus.center,0,-1.7)],[offset(focus.center,0,1.7),offset(focus.center,0,4)],
     ]}}]))
-  },[cells,focus,harmonized,ready,aoi,selected,historical,showDemoContours,zonesActive])
+  },[cells,focus,ready,aoi,selected,historical,showDemoContours,zonesActive])
 
   useEffect(()=>{
-    if(ready)fire.current?.update(zonesActive?[]:cells,harmonized,!playing)
-  },[cells,harmonized,ready,playing,zonesActive])
+    if(ready)fire.current?.update(zonesActive?[]:cells,!playing)
+  },[cells,ready,playing,zonesActive])
 
   useEffect(()=>{
     const instance=map.current
@@ -549,6 +555,7 @@ export function MapStage({focus,date,cells,loadingCells,harmonized,aoi,tool,onAr
       </Suspense>}
     </div>
     <div className="map-vignette" aria-hidden="true" />
+    {loadingCells&&<div className="map-observations-status" role="status">Loading fire observations…</div>}
     <StarField width={size.width} height={Math.min(112,Math.round(size.height*.22))}/>
     {(orbiting||(spaceCommand!==null&&spaceCommand===cameraToApply))&&<div className="orbital-layer" ref={spaceLayer} aria-hidden="true">
       <Suspense fallback={null}><SpaceCanvas frame={size} transferRef={transferRef} layerRef={spaceLayer} readyRef={orbitalReady}/></Suspense>
@@ -590,7 +597,7 @@ export function MapStage({focus,date,cells,loadingCells,harmonized,aoi,tool,onAr
       </ul>
       <p>Historical detections only. For preliminary site screening.</p>
     </div>:<div className={zonesRequested?'map-legend fire-zone-legend':'map-legend'}>
-      <div className="legend-title"><Layers3 size={13}/> FIRE RADIATIVE POWER <InfoTip label="Fire radiative power" help={frpHelp+' Taller pillars indicate higher FRP. The height scale compresses extremes so lower and moderate readings remain distinguishable.'}/></div>
+      <div className="legend-title"><Layers3 size={13}/> {weekly?'WEEKLY FRP SUM':'FIRE RADIATIVE POWER'} <InfoTip label="Fire radiative power" help={frpHelp+(weekly?' Pillars sum the daily FRP readings within each grid cell.':'')+' Taller pillars indicate higher FRP. The height scale compresses extremes so lower and moderate readings remain distinguishable.'}/></div>
       <div className="thermal-ramp" />
       <div className="legend-scale"><span>0</span><span>50</span><span>100</span><span>150+ MW</span></div>
       {(showDemoContours||aoi||selected)&&<div className="legend-boundaries">

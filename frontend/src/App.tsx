@@ -1,21 +1,19 @@
 import { startTransition, useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react'
 import { rankQuietMonths } from './seasonalHotspots'
 import * as Dialog from '@radix-ui/react-dialog'
-import { Activity, ArrowDown, ArrowDownToLine, ArrowUpRight, Bookmark, BookmarkPlus, Camera as CameraIcon, Circle, ChevronLeft, ChevronRight, Clock3, CodeXml, Crosshair, Database, FileText, Film, Focus as FocusIcon, Grid2X2, Layers3, Lasso, Leaf, MapPin, Puzzle as PuzzleIcon, Ruler, Search, SlidersHorizontal, Satellite, TriangleAlert, X, Zap } from 'lucide-react'
-import { areaPolygon, cellPolygon, clampDate, DAY, doy, firstDate, iso, maxCircleRadius, number, prettyDate, territories, type Aoi, type Cell, type Coord } from './data'
+import { Activity, ArrowDown, ArrowDownToLine, ArrowUpRight, Bookmark, BookmarkPlus, Camera as CameraIcon, Circle, ChevronLeft, ChevronRight, Clock3, CodeXml, Crosshair, FileText, Film, Focus as FocusIcon, Grid2X2, Layers3, Lasso, Leaf, MapPin, Ruler, Search, SlidersHorizontal, Satellite, TriangleAlert, X, Zap } from 'lucide-react'
+import { areaPolygon, californiaOverviewBounds, cellPolygon, clampDate, doy, firstDate, maxCircleRadius, number, prettyDate, territories, type Aoi, type Cell, type Coord, type MapBounds } from './data'
 import { calibration, calibrationAccuracy } from './calibration'
 import { cellObservations, dailyEstimates, dailyStats, dateIndex, periodStats, viirsStart } from './estimates'
+import { calendarWeeks, datesInRange, nextWeekDate, sumMapCells, summarizeWeek, weekIndex, weekRange } from './calendarWeeks'
 import { archiveDates, observations } from './observations'
 import { countryOptions, emptyRegions, focusForRegion, geography, type AreaMode, type Region, type RegionCollection, type RegionFeature } from './geography'
 import { MapStage, type Tool } from './MapStage'
-import { initialSnapshot, readPins, writePins, type Camera, type Pin, type Snapshot } from './pins'
+import { chernobylPinBounds, initialSnapshot, readPins, writePins, type Camera, type Pin, type Snapshot } from './pins'
 import { Timeline } from './Timeline'
 import { Button, InfoTip, Segmented, frpHelp, hotspotHelp, zScoreHelp } from './ui'
-import { PuzzleDropdown } from './PuzzlePanels'
-import { puzzleFocus, type Puzzle } from './dailyPuzzle'
-import { useDailyPuzzle } from './useDailyPuzzle'
 import type { HistoricalReport } from './statisticalReport'
-import { historicalApi, historicalFetch, gridParams, historicalArea, historicalCells, historicalRequest, useDailyCells, useHistorical, actualDay, historicalCalendarValue, scoreDetails, actualPeriod, snppArchiveStart } from './historical'
+import { historicalApi, historicalFetch, gridParams, historicalArea, historicalCells, historicalRequest, useHistorical, useHistoricalMap, actualDay, historicalCalendarValue, scoreDetails, actualPeriod, snppArchiveStart } from './historical'
 import { useFireZones } from './fireZones'
 import { snapshotFromUrl, updateViewUrl } from './viewLink'
 
@@ -102,7 +100,10 @@ export function App() {
   const [settings,setSettings]=useState(()=>snapshotFromUrl())
   const {focus,region,date,from,to,pass,harmonized,areaMode,aoi,radius,query,options,metric,calendarView}=settings
   const camera=useRef(settings.camera)
-  const [command,setCommand]=useState<CameraCommand|null>(()=>settings===initialSnapshot?null:{camera:settings.camera,duration:0})
+  const [command,setCommand]=useState<CameraCommand|null>(()=>settings===initialSnapshot?null:{
+    camera:settings.camera,duration:0,
+    bounds:focus.id==='california'&&!region&&!aoi?californiaOverviewBounds:chernobylPinBounds(focus,aoi),
+  })
   const [filtersOpen,setFiltersOpen]=useState(()=>!window.matchMedia(narrowWorkbench).matches)
   const [analyticsOpen,setAnalyticsOpen]=useState(()=>!window.matchMedia(narrowWorkbench).matches)
   useEffect(()=>{
@@ -127,7 +128,7 @@ export function App() {
   const [pinDialog,setPinDialog]=useState(false)
   const [pinName,setPinName]=useState('')
   const pinDock=useRef<HTMLDivElement>(null)
-  const [hasSelectedDay,setHasSelectedDay]=useState(false)
+  const hasSelectedDay=settings.granularity==='day'
   const [countries,setCountries]=useState(emptyRegions)
   const [admins,setAdmins]=useState(emptyRegions)
   const [adminIndex,setAdminIndex]=useState<Region[]>([])
@@ -188,30 +189,50 @@ export function App() {
   const delta=100*(estimates.frp/focus.median-1)
   const severity=demoCells.length&&delta>130?'critical':demoCells.length&&delta>0?'elevated':'normal'
 
-  const game=useDailyPuzzle(focus.id,hasSelectedDay?date:null,setMessage)
   useEffect(()=>{
-    if(!game.open&&!orbiting)updateViewUrl(settings)
-  },[game.open,orbiting,settings])
-  const historical=historicalApi!==undefined&&!game.open
+    if(!orbiting)updateViewUrl(settings)
+  },[orbiting,settings])
+  const historical=historicalApi!==undefined
   const viirs=date>=(historical?snppArchiveStart:viirsStart)
+  const activeWeek=weekRange(calendarWeeks[weekIndex(date)],from,to)
+  const mapFrom=hasSelectedDay?date:activeWeek.from
+  const mapTo=hasSelectedDay?date:activeWeek.to
   const zonesRequested=historical&&showFireZones&&!orbiting
   const archive=useHistorical(historical,historicalRequest(settings),date)
   const fireZones=useFireZones(zonesRequested&&(archive.selection||archive.error)
     ?JSON.stringify({area:historicalArea(settings)}):undefined,archive.selection?.dataset_manifest_sha256)
   const zonesActive=zonesRequested&&Boolean(fireZones.data?.features.length)
-  const dailyCells=useDailyCells(historical&&!zonesActive,archive.selection?.query_id,archive.key,date)
-  const actual={...archive,...dailyCells,error:archive.error??dailyCells.error}
+  const mapObservations=useHistoricalMap(historical&&!zonesActive,archive.selection?.query_id,archive.key,mapFrom,mapTo)
+  const actual={...archive,...mapObservations,error:archive.error??mapObservations.error}
   const cells=useMemo(()=>{
-    if(historical)return historicalCells(actual.rows??[],date,harmonized)
-    if(!viirs)return demoCells
-    return demoCells.map(cell=>({...cell,raw:cellObservations(cell,pass).viirsFrp}))
-  },[historical,actual.rows,date,harmonized,viirs,demoCells,pass])
-  const mappedDetections = useMemo(() => historical && actual.rows
-    ? cells.reduce((total, cell) => total + cell.weight, 0)
-    : null, [historical, actual.rows, cells])
+    if(historical)return sumMapCells(actual.mapDays?.map(day=>historicalCells(day.rows,day.date,harmonized))??[])
+    return sumMapCells(datesInRange(mapFrom,mapTo).map(day=>source.cellsForDay(day)
+      .filter(cell=>pass==='all'||cell.pass===pass)
+      .map(cell=>{
+        const readings=cellObservations(cell,pass)
+        return {...cell,raw:day>=viirsStart?readings.viirsFrp:harmonized?readings.correctedFrp:cell.raw}
+      })))
+  },[actual.mapDays,harmonized,historical,mapFrom,mapTo,pass,source])
+  const mapCellLimit=20_000
+  const mapCells=useMemo(()=>cells.length>mapCellLimit?cells.slice(0,mapCellLimit):cells,[cells])
+  const mappedDetections=useMemo(()=>historical&&actual.mapDays?
+    mapCells.reduce((total,cell)=>total+cell.weight,0):null,[historical,actual.mapDays,mapCells])
 
 
   const observedDays=useMemo(()=>actual.days?.map(day=>({date:day.date,values:actualDay(day,pass)}))??[],[actual.days,pass])
+  const weekStats=useMemo(()=>{
+    if(hasSelectedDay)return undefined
+    const selectedDays=datesInRange(mapFrom,mapTo)
+    const byDate=new Map(observedDays.map(day=>[day.date,day.values]))
+    const aggregate=(metric:'count'|'frp')=>summarizeWeek(selectedDays.map(day=>{
+      if(historical)return historicalCalendarValue(day,byDate.get(day),metric,harmonized).value
+      const values=series[dateIndex(day,firstDate)]
+      if(day>=viirsStart)return metric==='count'?values.viirsCount:values.viirs
+      if(harmonized)return metric==='count'?values.correctedCount:values.corrected
+      return metric==='count'?values.rawCount:values.raw
+    }),false)
+    return {count:aggregate('count'),frp:aggregate('frp')}
+  },[harmonized,hasSelectedDay,historical,mapFrom,mapTo,observedDays,series])
   const observedPeriod=useMemo(()=>actualPeriod(observedDays.filter(day=>day.date>=from&&day.date<=to),
     endIndex-startIndex+1,pass),[observedDays,from,to,startIndex,endIndex,pass])
   const observedDay=actualDay(actual.day,pass)
@@ -236,12 +257,12 @@ export function App() {
     return {median,delta:median>0?100*(current/median-1):null,rank,percentile:100*values.filter(value=>value<=current).length/values.length}
   },[harmonized,observedDay.corrected,observedDay.raw,observedDays])
   const nearestObserved=useMemo(()=>{
-    if(!historical||!actual.rows||actual.rows.length)return undefined
+    if(!historical||!actual.mapDays||actual.mapDays.some(day=>day.rows.length))return undefined
     const selected=Date.parse(date)
     return observedDays.filter(day=>day.date>=from&&day.date<=to&&(day.values.rawCount!==null||day.values.viirsCount!==null))
       .reduce<string|undefined>((nearest,day)=>
         !nearest||Math.abs(Date.parse(day.date)-selected)<Math.abs(Date.parse(nearest)-selected)?day.date:nearest,undefined)
-  },[actual.rows,date,from,historical,observedDays,to])
+  },[actual.mapDays,date,from,historical,observedDays,to])
   const quietMonths = useMemo(() => {
     if (!historical) {
       return rankQuietMonths(series.map((day, index) => ({
@@ -279,23 +300,23 @@ export function App() {
 
   useEffect(()=>{
     if(!playing)return
-    if(historical&&!(zonesActive?actual.days:actual.rows))return
-    const timer=window.setTimeout(()=>setSettings(current=>({...current,date:current.date>=to?from:iso(Date.parse(current.date)+DAY)})),460)
+    if(historical&&!(zonesActive?actual.days:actual.mapDays))return
+    const timer=window.setTimeout(()=>setSettings(current=>({...current,date:nextWeekDate(current.date,current.from,current.to)})),460)
     return ()=>clearTimeout(timer)
-  },[playing,from,to,date,historical,actual.rows,actual.days,zonesActive])
+  },[playing,from,to,date,historical,actual.days,actual.mapDays,zonesActive])
   useEffect(()=>{
     if(!message)return
     const timer=window.setTimeout(()=>setMessage(''),3200)
     return ()=>clearTimeout(timer)
   },[message])
 
-  function navigateTo(target:CameraDestination,apply:()=>void,globe:boolean,duration:number) {
+  function navigateTo(target:CameraDestination,apply:()=>void,globe:boolean,duration:number,bounds?:MapBounds) {
     if(globe&&!window.matchMedia('(prefers-reduced-motion: reduce)').matches){
-      setCommand({globe:target,startedAt:performance.now()})
+      setCommand({globe:target,startedAt:performance.now(),bounds})
       startTransition(apply)
     }else{
       apply()
-      setCommand({camera:target,duration:globe?0:duration})
+      setCommand({camera:target,duration:globe?0:duration,bounds})
     }
   }
 
@@ -306,16 +327,6 @@ export function App() {
     setTool(null);setOrbiting(false);setPlaying(false)
     const target={lon:nextFocus.center[0],lat:nextFocus.center[1],zoom:nextFocus.zoom}
     navigateTo(target,()=>setSettings(current=>({...current,focus:nextFocus,region:next,areaMode:nextMode,aoi:null,query:next.name})),globe,880)
-  }
-  function goToPuzzleRegion(puzzle:Puzzle) {
-    const next=puzzleFocus(puzzle)
-    if(!next)return
-    const saved=tour.current?.original
-    stopTour(false)
-    setPlaying(false)
-    setTool(null)
-    setSettings(current=>({...(saved??current),focus:next,region:null,areaMode:'countries',aoi:null,query:''}))
-    setCommand({camera:{lon:next.center[0],lat:next.center[1],zoom:next.zoom},duration:880})
   }
   function selectMapRegion(feature:RegionFeature,point?:Coord) {
     const target=feature.properties
@@ -329,16 +340,16 @@ export function App() {
     setSettings(current=>({...current,areaMode:next,aoi:next==='custom'?current.aoi:null,
       query:current.areaMode===next?current.query:'',region:next==='custom'||(next==='ecoregions')===(current.region?.kind==='eco')?current.region:null}))
   }
-  function selectDate(value:string,recenter=false) {
+  function selectDate(value:string,recenter=false,daily=true) {
     stopTour(false)
-    setHasSelectedDay(true)
-    setSettings(current=>({...current,date:clampDate(value,current.from,current.to)}))
+    setPlaying(false)
+    setSettings(current=>({...current,date:clampDate(value,current.from,current.to),granularity:daily?'day':undefined}))
     if(recenter){setOrbiting(false);setCommand({camera:{lon:focus.center[0],lat:focus.center[1]},duration:420})}
   }
   function range(start:string,end:string) {
     stopTour(false)
-    if(date<start||date>end)setHasSelectedDay(false)
-    setSettings(current=>({...current,from:start,to:end,date:clampDate(current.date,start,end)}));setPlaying(false)
+    setSettings(current=>({...current,from:start,to:end,date:clampDate(current.date,start,end),
+      granularity:current.date<start||current.date>end?undefined:current.granularity}));setPlaying(false)
   }
   function updateArea(area:Aoi) {
     setSettings(current=>({...current,aoi:area,areaMode:'custom',region:null,radius:area.type==='circle'?area.radius:current.radius}))
@@ -384,11 +395,10 @@ export function App() {
   }
   function orbit(short=false) {
     if(orbiting){stopTour(true);return}
-    setHasSelectedDay(false)
     setMeasuring(false);setTool(null);setPlaying(false)
     const stops=tourRegions.map(entry=>({
       ...settings,focus:entry,region:null,areaMode:'countries' as const,aoi:null,query:'',
-      date:entry.date,from:entry.date<from?entry.date:from,to:entry.date>to?entry.date:to,
+      date:entry.date,granularity:undefined,from:entry.date<from?entry.date:from,to:entry.date>to?entry.date:to,
     }))
     tour.current={original:settings,camera:camera.current,stops,short}
     setOrbiting(true)
@@ -408,11 +418,12 @@ export function App() {
   }
   function restorePin(pin:Pin) {
     stopTour(false)
-    setHasSelectedDay(true)
     const snapshot=pin.snapshot
     const restoredFocus=snapshot.region?.kind==='country'?{...snapshot.focus,area:'Country or territory'}:snapshot.focus
     setTool(null);setMeasuring(false);setOrbiting(false);setPlaying(false);setPinMenu(false)
-    navigateTo(snapshot.camera,()=>setSettings({...snapshot,focus:restoredFocus}),true,0)
+    const bounds=pin.id==='demo-california'?californiaOverviewBounds:
+      pin.id==='demo-chernobyl'?chernobylPinBounds(snapshot.focus,snapshot.aoi):undefined
+    navigateTo(snapshot.camera,()=>setSettings({...snapshot,focus:restoredFocus}),true,0,bounds)
     setMessage('Opened '+pin.name)
   }
   async function exportReport() {
@@ -428,7 +439,7 @@ export function App() {
         await report.exportHistoricalReport(settings,observations,from,to)
       }else{
         await report.exportStatisticalReport({
-          settings,day:stats,period,estimates,viirs,adjustment,delta,severity,activeCells:cells.length,
+          settings,day:stats,period,estimates,viirs,adjustment,delta,severity,activeCells:demoCells.length,
           wape:calibrationAccuracy.holdout_daytime_wape_2025,bias:calibrationAccuracy.west_us_bias,
         })
       }
@@ -457,7 +468,7 @@ export function App() {
       }
       return
     }
-    if(!cells.length)return
+    if(!demoCells.length)return
     const values=(cell:Cell)=>{
       const sensors=cellObservations(cell,pass)
       return {date,selected_frp_mw:viirs?sensors.viirsFrp:harmonized?sensors.correctedFrp:cell.raw,harmonized_modis_frp_mw:sensors.correctedFrp,raw_modis_hotspots:sensors.rawCount,harmonized_modis_hotspots:sensors.correctedCount,
@@ -524,15 +535,6 @@ export function App() {
             <p className="period-coefficient">FRP ≥ 7 days <b>{calibration.periodFrp[pass].toFixed(3)}</b></p>
           </div>
         </section>
-        <section className="filter-section calibration-controls">
-          <h3><Layers3 size={14}/>Intercalibration
-            <InfoTip label="Intercalibration" help={historical
-              ? 'Before 20 January 2012, Raw Satellite shows original MODIS values and Harmonized adjusts them to the VIIRS scale. From that date, the map prefers VIIRS FRP per cell and the calendar prefers VIIRS per daily metric. Each uses adjusted MODIS when the corresponding VIIRS value is unavailable.'
-              : 'In the demo, Raw and Harmonized show different MODIS values before 2012. From 2012 both show the simulated VIIRS values on the map and calendar.'}/>
-          </h3>
-          <Segmented label="Intercalibration mode" value={harmonized?'harmonized':'raw'} onChange={value=>setSettings(current=>({...current,harmonized:value==='harmonized'}))}
-            items={[{value:'raw',label:<><Database size={13}/> Raw Satellite</>},{value:'harmonized',label:'Harmonized'}]}/>
-        </section>
       </div>
     </>
   }
@@ -546,9 +548,6 @@ export function App() {
         <div className="header-tools">
           <Button className="tool-button orbit-trigger" helpDelay={500} help="Start or stop a camera tour of the showcase regions." aria-label="3D Orbit Tour / Fly-Around" aria-pressed={orbiting&&!tour.current?.short} onClick={()=>orbit()}><CameraIcon size={15}/><span>{orbiting&&!tour.current?.short?"Tour "+tourStop+"/"+tour.current?.stops.length:"3D Orbit Tour"}</span></Button>
           <Button className="tool-button" helpDelay={500} help="Fly over the four showcase regions in about ten seconds." aria-label="Demo flight over all four regions" aria-pressed={orbiting&&tour.current?.short===true} onClick={()=>orbit(true)}><Film size={15}/><span>{orbiting&&tour.current?.short?"Flight "+tourStop+"/"+tour.current.stops.length:"Demo flight"}</span></Button>
-          <PuzzleDropdown game={game} onRegion={goToPuzzleRegion} trigger={id=><Button className="tool-button puzzle-trigger" aria-label="Daily Puzzle"
-            aria-expanded={game.open} aria-controls={game.open?id:undefined} data-solved={game.solved}
-            helpDelay={500} help="Open the daily challenge and find the fire activity that matches its clues." onClick={game.toggle}><PuzzleIcon size={15}/><span>Daily Puzzle</span></Button>}/>
           <Button className="tool-button ecosystem-button" helpDelay={500} help="Show or hide peatlands, protected areas, and the Chornobyl Exclusion Zone on the map." aria-label="Peatlands & Protected Areas Overlay" aria-pressed={options.ecosystems}
             onClick={()=>setSettings(current=>({...current,options:{...current.options,ecosystems:!current.options.ecosystems}}))}><Leaf size={15}/><span>Peatlands &amp; Protected Areas</span></Button>
           <Button className="tool-button" helpDelay={500} help="Activate the ruler, then drag between two points on the map to measure the distance." aria-label="Ruler" aria-pressed={measuring} onClick={()=>{setTool(null);setMeasuring(value=>!value)}}><Ruler size={15}/><span>Ruler</span></Button>
@@ -580,10 +579,10 @@ export function App() {
         {filtersOpen?<ChevronLeft size={18}/>:<ChevronRight size={18}/>}
       </Button>
 
-      <MapStage focus={focus} date={date} cells={cells} loadingCells={historical&&!zonesActive&&!actual.rows&&!dailyCells.error&&Boolean(archive.selection||!archive.error)} playing={playing} historical={historical}
+      <MapStage focus={focus} date={date} cells={mapCells} loadingCells={historical&&!zonesActive&&!actual.mapDays&&!actual.error} playing={playing} historical={historical} weekly={!hasSelectedDay}
         zonesActive={zonesActive} zonesRequested={zonesRequested} fireZones={fireZones}
         onToggleFireZones={()=>setShowFireZones(value=>!value)}
-        harmonized={!historical&&!viirs&&harmonized} aoi={aoi} tool={tool} onArea={updateArea} onCirclePreviewRadius={setCirclePreviewRadius}
+        aoi={aoi} tool={tool} onArea={updateArea} onCirclePreviewRadius={setCirclePreviewRadius}
         command={command} onCamera={value=>{camera.current=value}} options={options} onOptions={next=>setSettings(current=>({...current,options:next}))}
         countries={countries} admins={admins} ecoregions={ecoregions} areaMode={areaMode} selected={selected} onRegion={selectMapRegion}
         measuring={measuring} orbiting={orbiting} onTourEnd={()=>showTourStop(tourStop)}/>
@@ -602,8 +601,10 @@ export function App() {
           <div className="analysis-heading">
             <div className="analysis-area"><MapPin size={13}/>{focus.area}</div>
             <h3>{focus.name}</h3>
-            <div className="analysis-date mono"><span>{prettyDate(date)} <b>· DOY {String(doy(date)).padStart(3,'0')}</b></span>
-              <span className={'severity '+(historical?'normal':severity)}><span/>{historical?(daily.rawCount!==null||daily.viirsCount!==null?'OBSERVED':actual.day?'COVERAGE UNKNOWN':'LOADING'):severity==='critical'?'CRITICAL ANOMALY':severity==='elevated'?'ELEVATED':'NOMINAL'}</span></div>
+            <div className="analysis-date mono"><span>{hasSelectedDay?<>
+              {prettyDate(date)} <b>· DOY {String(doy(date)).padStart(3,'0')}</b>
+            </>:mapFrom+' – '+mapTo}</span>
+              <span className={'severity '+(historical?'normal':severity)}><span/>{!hasSelectedDay?'WEEKLY TOTAL':historical?(daily.rawCount!==null||daily.viirsCount!==null?'OBSERVED':actual.day?'COVERAGE UNKNOWN':'LOADING'):severity==='critical'?'CRITICAL ANOMALY':severity==='elevated'?'ELEVATED':'NOMINAL'}</span></div>
           </div>
           <section className="analysis-card seasonal-hotspots" aria-labelledby="quiet-months-title">
             <h4 id="quiet-months-title">Lowest-activity months</h4>
@@ -627,43 +628,57 @@ export function App() {
           </section>
           {historical&&actual.error&&<p className="sensor-note" role="alert">{actual.error} <Button onClick={actual.retry}>Retry</Button></p>}
           {historical&&!actual.days&&!actual.error&&<p className="sensor-note" role="status">Loading the 2000–2025 archive…</p>}
-          {historical&&actual.rows?.length===0&&actual.days&&<p className="sensor-note">No detections in this area on {date} for the selected pass.
+          {historical&&actual.mapDays?.every(day=>day.rows.length===0)&&actual.days&&<p className="sensor-note">No detections in this area for {hasSelectedDay?date:mapFrom+' – '+mapTo} and the selected pass.
             {nearestObserved&&<> <Button onClick={()=>selectDate(nearestObserved,true)}>Go to {nearestObserved}</Button></>}
           </p>}
-          {historical&&actual.complete===false&&<p className="sensor-note">Map display limit reached. CSV and GeoJSON include the full available selection.</p>}
+          {(actual.complete===false||cells.length>mapCellLimit)&&<p className="sensor-note">Map display limit reached. Calendar totals still use the full available archive.</p>}
           <section className="analysis-card calibration">
             <h4><Layers3 size={14}/> Scientific intercalibration <InfoTip label="Hotspots" help={hotspotHelp}/><InfoTip label="FRP" help={frpHelp}/></h4>
-            <div className="sensor-group">Selected day · {date}</div>
-            <SensorRow label="Raw MODIS hotspots" value={display(daily.rawCount)} active={!harmonized}/>
-            <SensorRow label="Harmonized MODIS hotspots" value={display(daily.correctedCount)} active={harmonized}/>
-            {viirs&&<SensorRow label="VIIRS hotspots" value={display(daily.viirsCount)}/>}
-            <SensorRow label="Raw MODIS FRP" value={display(daily.raw)} unit="MW" active={!harmonized}/>
-            <SensorRow label="Harmonized MODIS FRP" value={display(daily.corrected)} unit="MW" active={harmonized}/>
-            {viirs&&<SensorRow label="VIIRS FRP" value={display(daily.viirs)} unit="MW"/>}
-            <div className="correction mono"><ArrowDown size={13}/><b>{display(historical?observedAdjustment:adjustment,value=>value.toFixed(1)+'%')}</b><span>daily FRP adjustment</span></div>
-            {historical&&<p className="sensor-note">Harmonized values are estimates using the configured coefficients.</p>}
-            <div className="sensor-group period-group">Period totals <span>{period.days} {period.days===1?'DAY':'DAYS'}</span></div>
-            <SensorRow label="Raw MODIS hotspots" value={display(totals.rawCount)}/>
-            <SensorRow label="Harmonized MODIS hotspots" value={display(totals.correctedCount)} active={harmonized}/>
-            {period.viirsDays>0&&<SensorRow label="VIIRS hotspots" value={display(totals.viirsCount)}/>}
-            <SensorRow label="Raw MODIS FRP sum" value={display(totals.raw)} unit={historical?'MW':'MW·day'}/>
-            <SensorRow label="Harmonized MODIS FRP sum" value={display(totals.corrected)} unit={historical?'MW':'MW·day'} active={harmonized}/>
-            {period.viirsDays>0&&<SensorRow label="VIIRS FRP sum" value={display(totals.viirs)} unit={historical?'MW':'MW·day'}/>}
-            <div className="sensor-group period-group">Daily averages <span>{period.usePeriodCoefficient?'PERIOD FRP':'DAILY FRP'}</span></div>
-            <SensorRow label="Raw MODIS hotspots" value={mean('rawCount')} unit="/day"/>
-            <SensorRow label="Harmonized MODIS hotspots" value={mean('correctedCount')} unit="/day" active={harmonized}/>
-            {period.viirsDays>0&&<SensorRow label="VIIRS hotspots" value={mean('viirsCount')} unit="/day"/>}
-            <SensorRow label="Raw MODIS FRP" value={mean('raw')} unit="MW"/>
-            <SensorRow label="Harmonized MODIS FRP" value={mean('corrected')} unit="MW" active={harmonized}/>
-            {period.viirsDays>0&&<SensorRow label="VIIRS FRP" value={mean('viirs')} unit="MW"/>}
-            {historical?<p className="sensor-note">Averages use days with available values for each metric. FRP days: MODIS {fmt(observedPeriod.denominators.raw)}, VIIRS {fmt(observedPeriod.denominators.viirs)}.</p>:
-              period.viirsDays>0&&period.viirsDays<period.days&&<p className="sensor-note">VIIRS averages cover {fmt(period.viirsDays)} days from 2012 onward.</p>}
-            <div className="sensor-group period-group">Activity in selected period</div>
-            <SensorRow label="Days with detections" value={historical?display(actual.days?observedPeriod.activeDays:null):fmt(period.activeDays)} unit={'/ '+fmt(period.days)}/>
-            <SensorRow label="Peak harmonized FRP day" value={historical?observedPeriod.peak?.date??'—':period.peak?archiveDates[period.peakDay]:'—'}
-              unit={historical?(observedPeriod.peak?display(observedPeriod.peak.values.corrected)+' MW':undefined):period.peak?fmt(period.peak)+' MW':undefined}/>
+            <div className="calibration-group selected-stats">
+              {weekStats?<><div className="sensor-group">Selected week</div>
+                <SensorRow label="Hotspot sum" value={display(weekStats.count.value)}/>
+                <SensorRow label="FRP sum" value={display(weekStats.frp.value)} unit="MW"/>
+                <p className="sensor-note">{weekStats.count.observed}/{weekStats.count.days} days with hotspot values · {weekStats.frp.observed}/{weekStats.frp.days} days with FRP values</p>
+              </>:<>
+              <div className="sensor-group">Selected day · {date}</div>
+              <SensorRow label="Raw MODIS hotspots" value={display(daily.rawCount)} active={!harmonized}/>
+              <SensorRow label="Harmonized MODIS hotspots" value={display(daily.correctedCount)} active={harmonized}/>
+              {viirs&&<SensorRow label="VIIRS hotspots" value={display(daily.viirsCount)}/>}
+              <SensorRow label="Raw MODIS FRP" value={display(daily.raw)} unit="MW" active={!harmonized}/>
+              <SensorRow label="Harmonized MODIS FRP" value={display(daily.corrected)} unit="MW" active={harmonized}/>
+              {viirs&&<SensorRow label="VIIRS FRP" value={display(daily.viirs)} unit="MW"/>}
+              <div className="correction mono"><ArrowDown size={13}/><b>{display(historical?observedAdjustment:adjustment,value=>value.toFixed(1)+'%')}</b><span>daily FRP adjustment</span></div>
+              {historical&&<p className="sensor-note">Harmonized values are estimates using the configured coefficients.</p>}
+              </>}
+            </div>
+            <div className="calibration-group period-stats">
+              <div className="sensor-group">Period totals <span>{period.days} {period.days===1?'DAY':'DAYS'}</span></div>
+              <SensorRow label="Raw MODIS hotspots" value={display(totals.rawCount)}/>
+              <SensorRow label="Harmonized MODIS hotspots" value={display(totals.correctedCount)} active={harmonized}/>
+              {period.viirsDays>0&&<SensorRow label="VIIRS hotspots" value={display(totals.viirsCount)}/>}
+              <SensorRow label="Raw MODIS FRP sum" value={display(totals.raw)} unit={historical?'MW':'MW·day'}/>
+              <SensorRow label="Harmonized MODIS FRP sum" value={display(totals.corrected)} unit={historical?'MW':'MW·day'} active={harmonized}/>
+              {period.viirsDays>0&&<SensorRow label="VIIRS FRP sum" value={display(totals.viirs)} unit={historical?'MW':'MW·day'}/>}
+            </div>
+            <div className="calibration-group average-stats">
+              <div className="sensor-group">Daily averages <span>{period.usePeriodCoefficient?'PERIOD FRP':'DAILY FRP'}</span></div>
+              <SensorRow label="Raw MODIS hotspots" value={mean('rawCount')} unit="/day"/>
+              <SensorRow label="Harmonized MODIS hotspots" value={mean('correctedCount')} unit="/day" active={harmonized}/>
+              {period.viirsDays>0&&<SensorRow label="VIIRS hotspots" value={mean('viirsCount')} unit="/day"/>}
+              <SensorRow label="Raw MODIS FRP" value={mean('raw')} unit="MW"/>
+              <SensorRow label="Harmonized MODIS FRP" value={mean('corrected')} unit="MW" active={harmonized}/>
+              {period.viirsDays>0&&<SensorRow label="VIIRS FRP" value={mean('viirs')} unit="MW"/>}
+              {historical?<p className="sensor-note">Averages use days with available values for each metric. FRP days: MODIS {fmt(observedPeriod.denominators.raw)}, VIIRS {fmt(observedPeriod.denominators.viirs)}.</p>:
+                period.viirsDays>0&&period.viirsDays<period.days&&<p className="sensor-note">VIIRS averages cover {fmt(period.viirsDays)} days from 2012 onward.</p>}
+            </div>
+            <div className="calibration-group activity-stats">
+              <div className="sensor-group">Activity in selected period</div>
+              <SensorRow label="Days with detections" value={historical?display(actual.days?observedPeriod.activeDays:null):fmt(period.activeDays)} unit={'/ '+fmt(period.days)}/>
+              <SensorRow label="Peak harmonized FRP day" value={historical?observedPeriod.peak?.date??'—':period.peak?archiveDates[period.peakDay]:'—'}
+                unit={historical?(observedPeriod.peak?display(observedPeriod.peak.values.corrected)+' MW':undefined):period.peak?fmt(period.peak)+' MW':undefined}/>
+            </div>
           </section>
-          <section className="analysis-card historical">
+          {hasSelectedDay&&<section className="analysis-card historical">
             <h4><Clock3 size={14}/> Historical context <InfoTip label="Z-score" help={zScoreHelp}/></h4>
             {historical?<>
               <div className="historical-row"><span><strong className="mono">{display(context?.delta,signed)}</strong> vs historical median</span><small className="mono">{display(context?.median)} MW BASELINE</small></div>
@@ -674,28 +689,33 @@ export function App() {
               <div className="historical-row"><span><strong className="mono">{signed(delta)}</strong> vs historical median</span><small className="mono">{number(focus.median)} MW BASELINE</small></div>
               <div className="historical-row"><span><strong className="mono">{cells.length?'#'+focus.rank:'—'}</strong> severity rank <small className="inline-meta">/ 26 years</small></span><small className="mono">{cells.length?focus.percentile.toFixed(1)+'TH PERCENTILE':'NO ACTIVE CELLS'}</small></div>
             </>}
+          </section>}
+          <section className="analysis-card map-metrics">
+            <h4><Grid2X2 size={14}/> Map metrics</h4>
+            <div className="kpis">
+              {historical&&<section className="wide-kpi">
+                <span>Mapped satellite detections</span>
+                <strong className="mono">{display(mappedDetections)}{actual.complete===false||mapCells.length<cells.length?' (partial)':''}</strong>
+              </section>}
+              <section><span><Grid2X2 size={13}/> Active fire cells <InfoTip label="Active fire cells" help="Number of map grid cells containing fire detections for the selected week or day."/></span><strong className="mono">{historical&&!actual.mapDays?'—':units(cells.length,'cells')}</strong></section>
+              {hasSelectedDay&&<><section title={historical?'Requires time integration of FRP':undefined}><span><Zap size={13}/> Radiative energy <InfoTip label="Radiative energy" help="Fire radiative energy is the total energy radiated over time. It is estimated by integrating FRP."/></span><strong className="mono">{historical?'—':units(estimates.fre,'TJ')}</strong></section>
+              <section className="wide-kpi" title={historical?'Requires a validated area estimate':'FRP ÷ [0.95 × σ × (800⁴ − 300⁴)], expressed in km²'}><span><FocusIcon size={13}/> Estimated fire area</span><strong className="mono">{historical?'—':units(estimates.area,'km²')}</strong></section>
+              <section className="wide-kpi" title={historical?'Requires time integration and an emissions model':'FRE × 0.368 kg dry matter/MJ × 1.626 kg CO₂/kg dry matter'}><span><Leaf size={13}/> Estimated CO₂ emissions</span><strong className="mono">{historical?'—':units(estimates.co2,'t')}</strong></section></>}
+            </div>
           </section>
-          <div className="kpis">
-            {historical && <section className="wide-kpi">
-              <span>Mapped satellite detections</span>
-              <strong className="mono">{display(mappedDetections)}{actual.complete === false ? ' (partial)' : ''}</strong>
-            </section>}
-            <section><span><Grid2X2 size={13}/> Active fire cells <InfoTip label="Active fire cells" help="Number of map grid cells containing fire detections for the selected day and filters."/></span><strong className="mono">{historical&&!actual.rows?'—':units(cells.length,'cells')}</strong></section>
-            <section title={historical?'Requires time integration of FRP':undefined}><span><Zap size={13}/> Radiative energy <InfoTip label="Radiative energy" help="Fire radiative energy is the total energy radiated over time. It is estimated by integrating FRP."/></span><strong className="mono">{historical?'—':units(estimates.fre,'TJ')}</strong></section>
-            <section className="wide-kpi" title={historical?'Requires a validated area estimate':'FRP ÷ [0.95 × σ × (800⁴ − 300⁴)], expressed in km²'}><span><FocusIcon size={13}/> Estimated fire area</span><strong className="mono">{historical?'—':units(estimates.area,'km²')}</strong></section>
-            <section className="wide-kpi" title={historical?'Requires time integration and an emissions model':'FRE × 0.368 kg dry matter/MJ × 1.626 kg CO₂/kg dry matter'}><span><Leaf size={13}/> Estimated CO₂ emissions</span><strong className="mono">{historical?'—':units(estimates.co2,'t')}</strong></section>
-          </div>
         </div>
         <div className="export-buttons">
-          <Button className="csv-button" disabled={historical?!actual.selection:!cells.length} onClick={()=>exportData('csv')}><ArrowDownToLine size={15}/> Download Filtered CSV<ArrowUpRight size={13} className="button-tail"/></Button>
-          <Button className="geojson-button" disabled={historical?!actual.selection:!cells.length} onClick={()=>exportData('geojson')}><CodeXml size={15}/> Export GeoJSON for QGIS<ArrowUpRight size={13} className="button-tail"/></Button>
+          <Button className="csv-button" title={'Export observations for '+date} disabled={historical?!actual.selection:!demoCells.length} onClick={()=>exportData('csv')}><ArrowDownToLine size={15}/> Download Filtered CSV<ArrowUpRight size={13} className="button-tail"/></Button>
+          <Button className="geojson-button" title={'Export observations for '+date} disabled={historical?!actual.selection:!demoCells.length} onClick={()=>exportData('geojson')}><CodeXml size={15}/> Export GeoJSON for QGIS<ArrowUpRight size={13} className="button-tail"/></Button>
           <Button className="pdf-button" disabled={exportingReport||(historical&&!actual.selection)} onClick={exportReport}><FileText size={15}/> {exportingReport?'Preparing PDF…':'Export Statistical Report (PDF)'}<ArrowUpRight size={13} className="button-tail"/></Button>
         </div>
       </aside>
     </div>
 
-    <Timeline date={date} from={from} to={to} playing={playing} onPlay={()=>{stopTour(false);setHasSelectedDay(true);setPlaying(value=>!value)}}
-      onSelect={selectDate} series={series} historicalCalendar={historicalCalendar} historyReady={Boolean(actual.days)} harmonized={harmonized} onRange={range} metric={metric} view={calendarView}
+    <Timeline date={date} daySelected={hasSelectedDay} from={from} to={to} playing={playing}
+      onPlay={()=>{stopTour(false);setSettings(current=>({...current,granularity:undefined}));setPlaying(value=>!value)}}
+      onDay={value=>selectDate(value,true)} onWeek={value=>selectDate(value,false,false)} series={series} historicalCalendar={historicalCalendar} historyReady={Boolean(actual.days)} harmonized={harmonized}
+      onCalibration={value=>setSettings(current=>({...current,harmonized:value}))} onRange={range} metric={metric} view={calendarView}
       onMetric={value=>setSettings(current=>({...current,metric:value}))} onView={value=>setSettings(current=>({...current,calendarView:value}))}/>
     </div>
     <footer className="footer mono"><span><span className="live-dot"/> {historical?'HISTORICAL TELEMETRY':'DEMO TELEMETRY'} <i/> KEPLER.GL</span><span><TriangleAlert size={12}/> {historical?'NASA FIRMS OBSERVATIONS':'SYNTHETIC FIRE OBSERVATIONS'}</span></footer>

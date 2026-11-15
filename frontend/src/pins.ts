@@ -1,4 +1,4 @@
-import { firstDate, lastDate, scenarios, type Aoi, type Focus, type Pass } from './data'
+import { chernobylEventBounds, firstDate, lastDate, scenarios, type Aoi, type Focus, type MapBounds, type Pass } from './data'
 import type { AreaMode, Region } from './geography'
 
 export type Camera = { lat:number; lon:number; zoom:number; bearing:number; pitch:number }
@@ -8,7 +8,7 @@ export type CalendarView = 'grid' | 'ridge'
 export type Snapshot = {
   focus:Focus; region:Region|null; date:string; from:string; to:string; pass:Pass; harmonized:boolean;
   areaMode:AreaMode; aoi:Aoi|null; radius:number; query:string; options:MapOptions; camera:Camera;
-  metric:Metric; calendarView:CalendarView
+  metric:Metric; calendarView:CalendarView; granularity?:'day'
 }
 export type Pin = { id:string; name:string; snapshot:Snapshot }
 export const defaultOptions:MapOptions={grid:true,satellite:false,ecosystems:false}
@@ -18,15 +18,35 @@ export const initialSnapshot:Snapshot={
   camera:{lon:scenarios[0].center[0],lat:scenarios[0].center[1],zoom:scenarios[0].zoom,bearing:36,pitch:48},
   metric:'count',calendarView:'grid',
 }
-const defaults:Pin[]=scenarios.map(focus=>({id:'demo-'+focus.id,name:focus.short,snapshot:{...initialSnapshot,focus,date:focus.date,
-  camera:{...initialSnapshot.camera,lon:focus.center[0],lat:focus.center[1],zoom:focus.zoom}}}))
+function rectangularArea([west,south,east,north]:MapBounds):Extract<Aoi,{type:'lasso'}> {
+  return {type:'lasso',ring:[[west,south],[east,south],[east,north],[west,north]]}
+}
+const chernobylArea=chernobylEventBounds?rectangularArea(chernobylEventBounds):null
+
+export function chernobylPinBounds(focus:Focus,aoi:Aoi|null):MapBounds|undefined {
+  if(focus.id!=='chernobyl'||aoi?.type!=='lasso'||!chernobylArea)return undefined
+  const {ring}=chernobylArea
+  if(aoi.ring.length===ring.length&&aoi.ring.every(([lon,lat],index)=>lon===ring[index][0]&&lat===ring[index][1]))
+    return chernobylEventBounds
+}
+
+const defaults:Pin[]=scenarios.map(focus=>{
+  const aoi=focus.id==='chernobyl'?chernobylArea:null
+  return {id:'demo-'+focus.id,name:focus.short,snapshot:{
+    ...initialSnapshot,focus,date:focus.date,from:focus.event.date_range[0],to:focus.event.date_range[1],
+    aoi,areaMode:aoi?'custom':'countries',
+    camera:{...initialSnapshot.camera,lon:focus.center[0],lat:focus.center[1],zoom:focus.zoom},
+  }}
+})
 const storageKey='teletraan-1-pins-v1'
 export function readPins():Pin[] {
   try {
     const value=localStorage.getItem(storageKey)
     if (value===null) return defaults
     const stored:unknown=JSON.parse(value)
-    if (Array.isArray(stored) && stored.every(pin=>typeof pin?.id==='string'&&typeof pin?.name==='string'&&pin.snapshot?.focus&&pin.snapshot?.camera)) return stored
+    if (Array.isArray(stored) && stored.every(pin=>typeof pin?.id==='string'&&typeof pin?.name==='string'&&pin.snapshot?.focus&&pin.snapshot?.camera)) {
+      return stored.map(pin=>defaults.find(builtin=>builtin.id===pin.id)??pin)
+    }
   } catch { /* use the built-in scenarios if storage is unavailable */ }
   return defaults
 }

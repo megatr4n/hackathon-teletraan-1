@@ -2,7 +2,7 @@ import { clampDate, firstDate, iso, lastDate, maxCircleRadius, scenarios, type A
 import { countryOptions, focusForRegion, type Region } from './geography'
 import { initialSnapshot, type Snapshot } from './pins'
 
-const fields=['country','scenario','region','area','date','from','to','pass','mode','metric','view'] as const
+const fields=['country','scenario','region','area','date','from','to','pass','mode','metric','view','granularity'] as const
 
 function validDate(value:string|null, fallback:string) {
   if(!value||!/^\d{4}-\d{2}-\d{2}$/.test(value))return fallback
@@ -50,7 +50,7 @@ function catalogRegion(params:URLSearchParams):Region|null {
 
 export function snapshotFromUrl(search=window.location.search):Snapshot {
   const params=new URLSearchParams(search)
-  if(params.has('puzzle')||!fields.some(field=>params.has(field)))return initialSnapshot
+  if(!fields.some(field=>params.has(field)))return initialSnapshot
   const from=validDate(params.get('from'),firstDate)
   const to=validDate(params.get('to'),lastDate)
   if(from>to)return initialSnapshot
@@ -67,12 +67,12 @@ export function snapshotFromUrl(search=window.location.search):Snapshot {
     radius:aoi?.type==='circle'?aoi.radius:initialSnapshot.radius,query:region?.name??'',
     pass:pass==='day'||pass==='night'?pass:'all',harmonized:params.get('mode')!=='raw',
     metric:metric==='count'||metric==='z'?metric:'frp',calendarView:params.get('view')==='ridge'?'ridge':'grid',
+    granularity:params.get('granularity')==='day'?'day':undefined,
     camera:{...initialSnapshot.camera,lon:center[0],lat:center[1],zoom:focus.zoom}}
 }
 
 export function updateViewUrl(settings:Snapshot) {
   const url=new URL(window.location.href)
-  if(url.searchParams.has('puzzle'))return
   for(const field of fields)url.searchParams.delete(field)
   const {region,aoi,focus,date,from,to,pass,harmonized,metric,calendarView}=settings
   const params=url.searchParams
@@ -80,11 +80,14 @@ export function updateViewUrl(settings:Snapshot) {
   else if(region?.kind==='country')params.set('country',region.id)
   else if(region)params.set('region',JSON.stringify(region))
   else if(focus.id!==initialSnapshot.focus.id&&scenarios.some(entry=>entry.id===focus.id))params.set('scenario',focus.id)
-  if(region||aoi||date!==focus.date)params.set('date',date)
+  // The first scenario's event date differs from the blank view's archive date.
+  const needsDate=date!==focus.date||(focus.id===initialSnapshot.focus.id&&date!==initialSnapshot.date)
+  if(region||aoi||needsDate)params.set('date',date)
   if(from!==firstDate)params.set('from',from)
   if(to!==lastDate)params.set('to',to)
   if(pass!=='all')params.set('pass',pass)
   if(!harmonized)params.set('mode','raw')
+  if(settings.granularity==='day')params.set('granularity','day')
   // Existing shared views omit the metric for FRP. The bare URL uses the new default.
   if(metric!==initialSnapshot.metric||fields.some(field=>params.has(field)))params.set('metric',metric)
   if(calendarView!=='grid')params.set('view',calendarView)

@@ -15,15 +15,20 @@ export type Focus = {
 
 const configuredRegions = (parse(regionCatalog) as {regions:PresetRegion[]}).regions
 
+export type MapBounds = PresetRegion['bbox']
+export const californiaOverviewBounds=configuredRegions.find(region=>region.id==='us-west')?.bbox
+
+type DemoFocus = Focus & { event:PresetRegion['critical_event'] }
+
 function demoScenario(id:string,presetId:string,name:string,short:string,area:string,country:string,
-  telemetry:Pick<Focus,'raw'|'harmonized'|'median'|'count'|'fre'|'rank'|'percentile'|'code'>):Focus {
+  telemetry:Pick<Focus,'raw'|'harmonized'|'median'|'count'|'fre'|'rank'|'percentile'|'code'>):DemoFocus {
   const preset=configuredRegions.find(region=>region.id===presetId)
   if(!preset)throw new Error('Missing demo region: '+presetId)
-  return {id,name,short,area,country,date:preset.critical_event.date,center:preset.default_center,zoom:preset.default_zoom,...telemetry}
+  return {id,name,short,area,country,date:preset.critical_event.date,center:preset.default_center,zoom:preset.default_zoom,event:preset.critical_event,...telemetry}
 }
 
 // These telemetry fixtures are used by demo mode. Coordinates and dates come from config/regions.yaml.
-export const scenarios: Focus[] = [
+export const scenarios: DemoFocus[] = [
   demoScenario('chernobyl','ua-east','Chernobyl Exclusion Zone','Chernobyl (2020)','Ukraine · Eastern Europe','Ukraine',
     {raw:5628,harmonized:4120,median:710,count:158,fre:355.8,rank:1,percentile:99.8,code:'UKR / CEZ'}),
   demoScenario('california','us-west','California Camp Fire','California Camp Fire (2018)','United States · North America','United States',
@@ -33,6 +38,8 @@ export const scenarios: Focus[] = [
   demoScenario('australia','australia','Australia Black Summer','Australia Black Summer (2020)','Australia · Oceania','Australia',
     {raw:12524,harmonized:9650,median:1630,count:315,fre:833.8,rank:1,percentile:99.9,code:'AUS / NSW'}),
 ]
+export const chernobylEventBounds = scenarios[0].event.bbox
+
 export const firstDate = '2000-01-01'
 export const lastDate = '2025-12-31'
 export const DAY = 86_400_000
