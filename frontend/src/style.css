@@ -172,7 +172,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 }
 .orbital-layer { position:absolute; inset:0; z-index:2; pointer-events:none; opacity:0; overflow:hidden }
 .orbital-canvas { width:100%; height:100%; display:block }
-.map-vignette { pointer-events:none; z-index:1; background:radial-gradient(ellipse at 51% 49%,transparent 36%,#0b121b44 85%),linear-gradient(0deg,#09101ac9,transparent 17%,transparent 85%,#10192365) }
+.orbital-credit { position:absolute; right:16px; bottom:12px; color:#c5d3e0; font-size:10px }
+.map-vignette { pointer-events:none; z-index:1; background:radial-gradient(ellipse at 51% 54%,transparent 38%,#08142166 100%),linear-gradient(0deg,#071019a8,transparent 22%) }
+.map-stage[data-oblique="true"] .map-vignette { background:radial-gradient(ellipse at 50% 56%,transparent 38%,#07152275 100%),linear-gradient(180deg,#7893aa6b,transparent 41%),linear-gradient(0deg,#08121cad,transparent 24%) }
 .map-fallback { display:grid; place-items:center; font-size:12px; color:#d0dbe7; pointer-events:none; z-index:3 }
 .map-fallback div { background:#17202c; border:1px solid #41546a; padding:10px 14px; border-radius:5px }
 .map-edge { position:absolute; width:18px; height:18px; border-style:solid; border-color:#6b7a83; pointer-events:none; z-index:2 }
@@ -190,16 +192,18 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 .legend-title { display:flex; gap:6px; align-items:center; font:9px var(--mono); color:#d6dee7; letter-spacing:.02em; white-space:nowrap }
 .legend-title svg { color:#ed9468 }
 .thermal-ramp { height:6px; border-radius:2px; margin:7px 0 4px; background:linear-gradient(90deg,#7b242b,#b8442b,#ec6b36,#ffae56,#ffe0a0) }
-.legend-scale,.legend-z { display:flex; align-items:center; font:8px var(--mono); color:#98a6b8 }
-.legend-scale { justify-content:space-between }
-.legend-z { gap:5px; border-top:1px solid #303947; margin-top:6px; padding-top:5px }
-.legend-z span { width:13px; border-top:1px dashed #b26b51 }
-.legend-z span:nth-of-type(2) { border-color:#fc9358; margin-left:8px }
-.legend-z b { font-weight:450 }
+.legend-scale,.legend-boundaries { font:8px var(--mono); color:#98a6b8 }
+.legend-scale { display:flex; align-items:center; justify-content:space-between }
+.legend-boundaries { display:grid; gap:5px; border-top:1px solid #303947; margin-top:6px; padding-top:5px }
+.legend-boundaries div { display:flex; align-items:center; gap:6px }
+.legend-boundaries i { width:16px; border-top:2px solid; flex:none }
+.legend-demo-outline { border-color:#ffd195; border-top-style:dashed; filter:drop-shadow(0 0 2px #ff632a) }
+.legend-area-outline { border-color:#a3efff; filter:drop-shadow(0 0 2px #2bc8ef) }
 .camera-bar { bottom:13px; left:15px; display:flex; background:#121a25f0; border:1px solid #394759; border-radius:4px; padding:6px 8px; gap:0; color:#cbd5e2; font:9px var(--mono); white-space:nowrap; pointer-events:none }
 .camera-bar span+span { border-left:1px solid #334052; margin-left:6px; padding-left:6px }
 .camera-bar b { color:#8597aa; font-weight:500 }
-.map-credit { color:#a4afbb; bottom:2px; right:16px; font-size:8px; pointer-events:none }
+.map-credit { color:#a4afbb; bottom:2px; right:16px; max-width:65%; text-align:right; font-size:8px; pointer-events:none }
+.map-credit a { color:inherit; text-decoration:underline; pointer-events:auto }
 .map-controls { right:14px; bottom:27px; display:flex; flex-direction:column; align-items:stretch; gap:7px; width:50px }
 .map-controls .button { border:0; border-radius:0; background:#151e2af5; min-height:32px; color:#c1cddd; font:9px var(--mono); gap:3px }
 .map-controls .button[aria-pressed=true] { color:#ffaf83 }
@@ -218,6 +222,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 .map-label.river { font:italic 8px var(--mono); color:#8eacbf; opacity:.82 }
 .map-focus-label { z-index:1; pointer-events:none; padding:5px 7px; border:1px solid #9c6247; background:#261d23; color:#ffb083; font:9px var(--mono); white-space:nowrap; border-radius:3px; letter-spacing:.075em; display:flex; align-items:center; gap:5px }
 .map-focus-label i { width:5px; height:5px; border-radius:50%; background:#fa8d5e }
+.map-label.city,.map-label.country,.map-focus-label { transition:opacity .45s ease }
+.map-stage[data-hotspot-view="true"] .map-label.city,
+.map-stage[data-hotspot-view="true"] .map-label.country { opacity:.2 }
+.map-stage[data-hotspot-view="true"] .map-focus-label { opacity:.32 }
 .draw-overlay { position:absolute; inset:0; z-index:2; touch-action:none; cursor:crosshair }
 .circle-radius line,.circle-radius circle { stroke:#65d7f3; stroke-width:1.5; fill:#132b38 }
 .map-dates { border-bottom:0; border-top:1px solid #303949 }

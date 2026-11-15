@@ -1,10 +1,10 @@
 import {
-  AmbientLight, BufferGeometry, Color, DirectionalLight, Float32BufferAttribute, LinearFilter, Mesh,
+  AdditiveBlending, AmbientLight, BufferGeometry, Color, DirectionalLight, Float32BufferAttribute, Mesh,
   MeshBasicMaterial, MeshPhongMaterial, PerspectiveCamera, Points, PointsMaterial, Scene, SphereGeometry,
-  SRGBColorSpace, TextureLoader, Vector3, WebGLRenderer,
+  ShaderMaterial, SRGBColorSpace, TextureLoader, Vector3, WebGLRenderer,
 } from 'three'
 import { asset } from './geography'
-import { transferClimb, transferDescent } from './cameraTour'
+import { spaceTransferOpacity } from './cameraTour'
 import type { Camera } from './pins'
 
 export type SpaceTransfer = {
@@ -15,6 +15,7 @@ export type SpaceTransfer = {
 }
 
 const radians=Math.PI/180
+const mapFieldOfView=2*Math.atan(1/3)
 const sphere=(longitude:number,latitude:number,radius=1)=>new Vector3(
   Math.cos(latitude*radians)*Math.cos(longitude*radians)*radius,
   Math.sin(latitude*radians)*radius,
@@ -24,7 +25,7 @@ const sphere=(longitude:number,latitude:number,radius=1)=>new Vector3(
 export class OrbitalScene {
   private renderer:WebGLRenderer
   private scene=new Scene()
-  private camera=new PerspectiveCamera(39,1,.01,110)
+  private camera=new PerspectiveCamera(mapFieldOfView/radians,1,.0001,110)
   private loader=new TextureLoader()
   private moon:Mesh<SphereGeometry,MeshBasicMaterial>
   private stars:Points<BufferGeometry,PointsMaterial>
@@ -32,15 +33,26 @@ export class OrbitalScene {
   private right=new Vector3()
   private up=new Vector3()
   private target=new Vector3()
+  private heading=new Vector3()
+  private forward=new Vector3()
+  private clouds:Mesh<SphereGeometry,MeshPhongMaterial>
+  private atmosphere:Mesh<SphereGeometry,ShaderMaterial>
+  private earthLoaded=false
+  private cloudsLoaded=false
+
+  get ready() { return this.earthLoaded }
 
   constructor(canvas:HTMLCanvasElement) {
     this.renderer=new WebGLRenderer({canvas,antialias:true,alpha:false})
     this.renderer.setClearColor(0x040711)
 
-    const texture=(name:string)=>{
-      const result=this.loader.load(asset('space/'+name+'.webp'),undefined,undefined,()=>{})
-      result.colorSpace=SRGBColorSpace
-      result.minFilter=LinearFilter
+    const texture=(name:string,isColor=true)=>{
+      const result=this.loader.load(asset('space/'+name+'.webp'),()=>{
+        if(name==='earth')this.earthLoaded=true
+        if(name==='clouds')this.cloudsLoaded=true
+      },undefined,()=>{})
+      if(isColor)result.colorSpace=SRGBColorSpace
+      result.anisotropy=Math.min(4,this.renderer.capabilities.getMaxAnisotropy())
       this.textures.push(result)
       return result
     }
@@ -63,17 +75,47 @@ export class OrbitalScene {
     this.stars=new Points(starGeometry,new PointsMaterial({vertexColors:true,size:1.1,sizeAttenuation:false}))
     this.scene.add(this.stars)
 
-    const earth=new Mesh(new SphereGeometry(1,64,48),new MeshPhongMaterial({
-      map:texture('earth'),color:0xd8ecff,shininess:19,specular:0x25466c,emissive:0x07152e,
+    const earth=new Mesh(new SphereGeometry(1,128,96),new MeshPhongMaterial({
+      map:texture('earth'),color:0xeaf1ff,shininess:29,specular:0x1d4257,emissive:0x060c16,
     }))
     this.scene.add(earth)
-    this.scene.add(new AmbientLight(0xb7d0ff,.78))
-    const key=new DirectionalLight(0xffe3b3,2.45)
+    this.scene.add(new AmbientLight(0xc7dcff,.69))
+    const key=new DirectionalLight(0xfff2cf,2.12)
     key.position.set(-4,6,5)
     this.scene.add(key)
-    const edge=new DirectionalLight(0x4388ff,.83)
-    edge.position.set(3,-1,-4)
-    this.scene.add(edge)
+    this.clouds=new Mesh(new SphereGeometry(1.003,96,64),new MeshPhongMaterial({
+      alphaMap:texture('clouds',false),color:0xf5f8ff,emissive:0x121d32,specular:0x000000,
+      opacity:0,transparent:true,depthWrite:false,
+    }))
+    this.clouds.renderOrder=1
+    this.scene.add(this.clouds)
+    this.atmosphere=new Mesh(new SphereGeometry(1.008,96,64),new ShaderMaterial({
+      transparent:true,depthWrite:false,blending:AdditiveBlending,
+      uniforms:{strength:{value:0},sunDirection:{value:key.position.clone().normalize()}},
+      vertexShader:`
+        varying vec3 worldNormal;
+        varying vec3 worldPosition;
+        void main() {
+          worldPosition = (modelMatrix * vec4(position, 1.0)).xyz;
+          worldNormal = normalize(worldPosition);
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }`,
+      fragmentShader:`
+        uniform float strength;
+        uniform vec3 sunDirection;
+        varying vec3 worldNormal;
+        varying vec3 worldPosition;
+        void main() {
+          vec3 view = normalize(cameraPosition - worldPosition);
+          vec3 normal = normalize(worldNormal);
+          float rim = pow(1.0 - max(0.0, dot(normal, view)), 4.6);
+          float daylight = smoothstep(-0.35, 0.7, dot(normal, sunDirection));
+          vec3 glow = mix(vec3(0.075, 0.24, 0.68), vec3(0.45, 0.76, 1.0), daylight);
+          gl_FragColor = vec4(glow, rim * strength * mix(0.33, 1.0, daylight));
+        }`,
+    }))
+    this.atmosphere.renderOrder=2
+    this.scene.add(this.atmosphere)
 
     this.moon=new Mesh(new SphereGeometry(1,64,48),new MeshBasicMaterial({
       map:texture('moon'),color:new Color().setScalar(.95),
@@ -92,36 +134,38 @@ export class OrbitalScene {
   render(transfer:SpaceTransfer) {
     const {progress,camera}=transfer
     const outward=sphere(camera.lon,camera.lat)
-    const portrait=this.camera.aspect<1
-    const descent=transferDescent(progress)
-    const climb=transferClimb(progress)
-    // Match MapLibre's visible scale by the end of the crossfade, using its
-    // Mercator zoom and 37° vertical field of view at the destination latitude.
-    const globeFov=(portrait?54:42)+descent*(36.87-(portrait?54:42))
-    const mapScale=transfer.viewportHeight*2*Math.PI*Math.cos(camera.lat*radians)/(2*512*2**camera.zoom*Math.tan(globeFov*radians/2))
-    const distance=1+(.035+2.71*climb)*(1-descent)+Math.max(.012,mapScale)*descent
-    this.camera.position.copy(outward).multiplyScalar(distance)
     this.right.set(0,1,0).cross(outward).normalize()
     this.up.crossVectors(outward,this.right).normalize()
-    this.camera.fov=globeFov
-    this.camera.updateProjectionMatrix()
-    this.target.copy(outward).multiplyScalar(descent*.92)
-      .addScaledVector(this.up,(portrait?.20:.15)*(1-descent))
-    const mapBearing=((camera.bearing+180)%360)-180
-
+    const bearing=camera.bearing*radians
+    const pitch=camera.pitch*radians
+    this.heading.copy(this.up).multiplyScalar(Math.cos(bearing)).addScaledVector(this.right,Math.sin(bearing))
+    // Use the map's vertical field of view and local Mercator scale at both handoffs.
+    const mapDistance=transfer.viewportHeight*Math.PI*Math.cos(camera.lat*radians)/(512*2**camera.zoom*Math.tan(mapFieldOfView/2))
+    const orbitalBlend=spaceTransferOpacity(progress)**2
+    const orbitDistance=2.55/Math.min(1,this.camera.aspect)
+    const eyeDistance=mapDistance+(Math.max(mapDistance,orbitDistance)-mapDistance)*orbitalBlend
+    this.target.copy(outward)
+    this.camera.position.copy(outward).multiplyScalar(1+eyeDistance*Math.cos(pitch))
+      .addScaledVector(this.heading,-eyeDistance*Math.sin(pitch))
+    this.camera.up.copy(this.heading)
     this.camera.lookAt(this.target)
-    this.camera.rotateZ(.06*Math.sin(progress*Math.PI)*(1-descent)+mapBearing*radians*descent*.8)
     this.stars.position.copy(this.camera.position)
 
-    this.moon.visible=transfer.moon
+    const cloudOpacity=.69*orbitalBlend
+    this.clouds.visible=this.cloudsLoaded&&eyeDistance>.05&&cloudOpacity>.01
+    this.clouds.material.opacity=cloudOpacity
+    this.atmosphere.visible=eyeDistance>.075
+    this.atmosphere.material.uniforms.strength.value=.66*orbitalBlend
+    this.moon.visible=transfer.moon&&orbitalBlend>.6
     if(this.moon.visible){
       const depth=12
-      const radius=depth*Math.sin(Math.atan(.075*Math.tan(globeFov*radians/2)))
-      const limb=depth/Math.sqrt(distance**2-1)
-      const angle=portrait?1.29:.88
+      const radius=depth*.025
+      const limb=depth/Math.sqrt(this.camera.position.lengthSq()-1)
+      const angle=this.camera.aspect<1?1.39:.88
       const offset=limb+radius*.4
+      this.camera.getWorldDirection(this.forward)
       this.moon.scale.setScalar(radius)
-      this.moon.position.copy(this.camera.position).addScaledVector(outward,-depth)
+      this.moon.position.copy(this.camera.position).addScaledVector(this.forward,depth)
         .addScaledVector(this.right,Math.cos(angle)*offset).addScaledVector(this.up,Math.sin(angle)*offset)
       this.moon.rotation.y=.3+progress*.3
     }

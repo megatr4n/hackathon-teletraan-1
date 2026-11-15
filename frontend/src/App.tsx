@@ -1,7 +1,7 @@
 import { startTransition, useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react'
 import { rankQuietMonths } from './seasonalHotspots'
 import * as Dialog from '@radix-ui/react-dialog'
-import { Activity, ArrowDown, ArrowDownToLine, ArrowUpRight, Bookmark, BookmarkPlus, Camera as CameraIcon, Circle, ChevronLeft, ChevronRight, Clock3, CodeXml, Crosshair, Database, FileText, Focus as FocusIcon, Grid2X2, Layers3, Lasso, Leaf, MapPin, Puzzle as PuzzleIcon, Ruler, Search, SlidersHorizontal, Satellite, TriangleAlert, X, Zap } from 'lucide-react'
+import { Activity, ArrowDown, ArrowDownToLine, ArrowUpRight, Bookmark, BookmarkPlus, Camera as CameraIcon, Circle, ChevronLeft, ChevronRight, Clock3, CodeXml, Crosshair, Database, FileText, Film, Focus as FocusIcon, Grid2X2, Layers3, Lasso, Leaf, MapPin, Puzzle as PuzzleIcon, Ruler, Search, SlidersHorizontal, Satellite, TriangleAlert, X, Zap } from 'lucide-react'
 import { areaPolygon, cellPolygon, clampDate, DAY, doy, firstDate, iso, maxCircleRadius, number, prettyDate, territories, type Aoi, type Cell, type Coord } from './data'
 import { calibration, calibrationAccuracy } from './calibration'
 import { cellObservations, dailyEstimates, dailyStats, dateIndex, periodStats, viirsStart } from './estimates'
@@ -119,7 +119,7 @@ export function App() {
   const [measuring,setMeasuring]=useState(false)
   const [orbiting,setOrbiting]=useState(false)
   const [tourStop,setTourStop]=useState(0)
-  const tour=useRef<{original:Snapshot;camera:Camera;stops:Snapshot[]}|null>(null)
+  const tour=useRef<{original:Snapshot;camera:Camera;stops:Snapshot[];short:boolean}|null>(null)
   const [pins,setPins]=useState(readPins)
   const [pinMenu,setPinMenu]=useState(false)
   const [pinDialog,setPinDialog]=useState(false)
@@ -369,20 +369,20 @@ export function App() {
     const active=tour.current
     if(!active)return
     const target=active.stops[index]
-    if(!target){stopTour(true);return}
+    if(!target){stopTour(!active.short);return}
     setTourStop(index+1)
     setSettings(target)
-    setCommand({track:cinematicTrack(target.focus,index)})
+    setCommand({track:cinematicTrack(target.focus,index,active.short)})
   }
-  function orbit() {
-    setHasSelectedDay(false)
+  function orbit(short=false) {
     if(orbiting){stopTour(true);return}
+    setHasSelectedDay(false)
     setMeasuring(false);setTool(null);setPlaying(false)
     const stops=tourRegions.map(entry=>({
       ...settings,focus:entry,region:null,areaMode:'countries' as const,aoi:null,query:'',
       date:entry.date,from:entry.date<from?entry.date:from,to:entry.date>to?entry.date:to,
     }))
-    tour.current={original:settings,camera:camera.current,stops}
+    tour.current={original:settings,camera:camera.current,stops,short}
     setOrbiting(true)
     showTourStop(0)
   }
@@ -536,7 +536,8 @@ export function App() {
         <div className="brand-copy"><h1>TELETRAAN-1</h1><div className="mono">WILDFIRE MISSION CONTROL</div></div>
       </div>
         <div className="header-tools">
-          <Button className="tool-button orbit-trigger" helpDelay={500} help="Start or stop a camera tour of the showcase regions." aria-label="3D Orbit Tour / Fly-Around" aria-pressed={orbiting} onClick={orbit}><CameraIcon size={15}/><span>{orbiting?"Tour "+tourStop+"/"+tour.current?.stops.length:"3D Orbit Tour"}</span></Button>
+          <Button className="tool-button orbit-trigger" helpDelay={500} help="Start or stop a camera tour of the showcase regions." aria-label="3D Orbit Tour / Fly-Around" aria-pressed={orbiting&&!tour.current?.short} onClick={()=>orbit()}><CameraIcon size={15}/><span>{orbiting&&!tour.current?.short?"Tour "+tourStop+"/"+tour.current?.stops.length:"3D Orbit Tour"}</span></Button>
+          <Button className="tool-button" helpDelay={500} help="Fly over the four showcase regions in about ten seconds." aria-label="Demo flight over all four regions" aria-pressed={orbiting&&tour.current?.short===true} onClick={()=>orbit(true)}><Film size={15}/><span>{orbiting&&tour.current?.short?"Flight "+tourStop+"/"+tour.current.stops.length:"Demo flight"}</span></Button>
           <PuzzleDropdown game={game} onRegion={goToPuzzleRegion} trigger={id=><Button className="tool-button puzzle-trigger" aria-label="Daily Puzzle"
             aria-expanded={game.open} aria-controls={game.open?id:undefined} data-solved={game.solved}
             helpDelay={500} help="Open the daily challenge and find the fire activity that matches its clues." onClick={game.toggle}><PuzzleIcon size={15}/><span>Daily Puzzle</span></Button>}/>
@@ -571,7 +572,7 @@ export function App() {
         {filtersOpen?<ChevronLeft size={18}/>:<ChevronRight size={18}/>}
       </Button>
 
-      <MapStage focus={focus} date={date} cells={cells} historical={historical} harmonized={!historical&&!viirs&&harmonized} aoi={aoi} tool={tool} onArea={updateArea} onCirclePreviewRadius={setCirclePreviewRadius}
+      <MapStage focus={focus} date={date} cells={cells} loadingCells={historical&&!actual.rows&&!actual.error} playing={playing} historical={historical} harmonized={!historical&&!viirs&&harmonized} aoi={aoi} tool={tool} onArea={updateArea} onCirclePreviewRadius={setCirclePreviewRadius}
         command={command} onCamera={value=>{camera.current=value}} options={options} onOptions={next=>setSettings(current=>({...current,options:next}))}
         countries={countries} admins={admins} ecoregions={ecoregions} areaMode={areaMode} selected={selected} onRegion={selectMapRegion}
         measuring={measuring} orbiting={orbiting} onTourEnd={()=>showTourStop(tourStop)}/>
