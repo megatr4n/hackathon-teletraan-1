@@ -1,4 +1,5 @@
 import { startTransition, useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react'
+import { rankQuietMonths } from './seasonalHotspots'
 import * as Dialog from '@radix-ui/react-dialog'
 import { Activity, ArrowDown, ArrowDownToLine, ArrowUpRight, Bookmark, BookmarkPlus, Camera as CameraIcon, Circle, ChevronLeft, ChevronRight, Clock3, CodeXml, Crosshair, Database, FileText, Focus as FocusIcon, Grid2X2, Layers3, Lasso, Leaf, MapPin, Puzzle as PuzzleIcon, Ruler, Search, SlidersHorizontal, Satellite, TriangleAlert, X, Zap } from 'lucide-react'
 import { areaPolygon, cellPolygon, clampDate, doy, firstDate, maxCircleRadius, number, prettyDate, territories, type Aoi, type Cell, type Coord } from './data'
@@ -207,6 +208,9 @@ export function App() {
   },[actual.mapDays,game.open,harmonized,historical,mapFrom,mapTo,pass,source])
   const mapCellLimit=20_000
   const mapCells=useMemo(()=>cells.length>mapCellLimit?cells.slice(0,mapCellLimit):cells,[cells])
+  const mappedDetections=useMemo(()=>historical&&actual.mapDays?
+    mapCells.reduce((total,cell)=>total+cell.weight,0):null,[historical,actual.mapDays,mapCells])
+
 
   const observedDays=useMemo(()=>actual.days?.map(day=>({date:day.date,values:actualDay(day,pass)}))??[],[actual.days,pass])
   const weekStats=useMemo(()=>{
@@ -252,6 +256,21 @@ export function App() {
       .reduce<string|undefined>((nearest,day)=>
         !nearest||Math.abs(Date.parse(day.date)-selected)<Math.abs(Date.parse(nearest)-selected)?day.date:nearest,undefined)
   },[actual.mapDays,date,from,historical,observedDays,to])
+  const quietMonths = useMemo(() => {
+    if (!historical) {
+      return rankQuietMonths(series.map((day, index) => ({
+        date: archiveDates[index], detections: day.rawCount,
+      })))
+    }
+    return rankQuietMonths((actual.days ?? []).map(day => {
+      const aqua = day.platforms.find(platform => platform.platform === 'aqua')
+      return {
+        date: day.date,
+        detections: aqua?.detection_count ?? null,
+        outsideRange: !aqua || aqua.coverage_status === 'outside_observed_range',
+      }
+    }))
+  }, [historical, actual.days, series])
   const calendarDayWhileLoading=actual.days?undefined:actual.day
   const historicalCalendar=useMemo(()=>{
     if(!historical)return undefined
@@ -453,7 +472,7 @@ export function App() {
     if(!demoCells.length)return
     const values=(cell:Cell)=>{
       const sensors=cellObservations(cell,pass)
-      return {date,selected_frp_mw:harmonized?sensors.correctedFrp:cell.raw,harmonized_modis_frp_mw:sensors.correctedFrp,raw_modis_hotspots:sensors.rawCount,harmonized_modis_hotspots:sensors.correctedCount,
+      return {date,selected_frp_mw:viirs?sensors.viirsFrp:harmonized?sensors.correctedFrp:cell.raw,harmonized_modis_frp_mw:sensors.correctedFrp,raw_modis_hotspots:sensors.rawCount,harmonized_modis_hotspots:sensors.correctedCount,
         viirs_frp_mw:viirs?sensors.viirsFrp:null,viirs_hotspots:viirs?sensors.viirsCount:null,mode:harmonized?'harmonized':'raw',source:'demo'}
     }
     if(format==='csv'){
@@ -518,11 +537,13 @@ export function App() {
           </div>
         </section>
         <section className="filter-section calibration-controls">
-          <h3><Layers3 size={14}/>Intercalibration (before 2012)
-            <InfoTip label="Intercalibration" help="For the map and the calendar’s fire power and hotspot counts, Raw Satellite shows original MODIS readings before 2012. Harmonized adjusts MODIS to the VIIRS scale. From 2012 onward, both modes use VIIRS when available and harmonized MODIS when VIIRS has no observations."/>
+          <h3><Layers3 size={14}/>Intercalibration
+            <InfoTip label="Intercalibration" help={historical
+              ? 'Before 20 January 2012, Raw Satellite shows original MODIS values and Harmonized adjusts them to the VIIRS scale. From that date, the map prefers VIIRS FRP per cell and the calendar prefers VIIRS per daily metric. Each uses adjusted MODIS when the corresponding VIIRS value is unavailable.'
+              : 'In the demo, Raw and Harmonized show different MODIS values before 2012. From 2012 both show the simulated VIIRS values on the map and calendar.'}/>
           </h3>
           <Segmented label="Intercalibration mode" value={harmonized?'harmonized':'raw'} onChange={value=>setSettings(current=>({...current,harmonized:value==='harmonized'}))}
-            items={[{value:'raw',label:<><Database size={13}/> Raw Satellite</>},{value:'harmonized',label:<>Harmonized</>}]}/>
+            items={[{value:'raw',label:<><Database size={13}/> Raw Satellite</>},{value:'harmonized',label:'Harmonized'}]}/>
         </section>
       </div>
     </>
@@ -594,6 +615,26 @@ export function App() {
             </>:mapFrom+' – '+mapTo}</span>
               <span className={'severity '+(historical?'normal':severity)}><span/>{!hasSelectedDay?'WEEKLY TOTAL':historical?(daily.rawCount!==null||daily.viirsCount!==null?'OBSERVED':actual.day?'COVERAGE UNKNOWN':'LOADING'):severity==='critical'?'CRITICAL ANOMALY':severity==='elevated'?'ELEVATED':'NOMINAL'}</span></div>
           </div>
+          <section className="analysis-card seasonal-hotspots" aria-labelledby="quiet-months-title">
+            <h4 id="quiet-months-title">Lowest-activity months</h4>
+            <div className="seasonal-hotspots-body">
+              <p className="seasonal-source">{historical ? 'Aqua MODIS' : 'Synthetic preview'} · Full archive · {pass === 'all' ? 'All passes' : pass === 'day' ? 'Day passes' : 'Night passes'}</p>
+              {quietMonths.length > 0 ? <>
+                <ol className="seasonal-months">
+                  {quietMonths.slice(0, 3).map(month => (
+                    <li key={month.month}>
+                      <strong>{month.month}</strong>
+                      <span className="seasonal-rate mono">{month.rate.toPrecision(3)} / day</span>
+                      <small>{month.years}/{month.eligibleYears} years with records</small>
+                    </li>
+                  ))}
+                </ol>
+                <p className="seasonal-note">Mean recorded detections per calendar day. Months with no records are excluded. Historical activity cannot establish current travel safety.</p>
+              </> : <p className="seasonal-note" role="status">
+                {actual.error ? 'Seasonal data unavailable.' : actual.days ? 'No comparable months with records.' : 'Loading the historical archive…'}
+              </p>}
+            </div>
+          </section>
           {historical&&actual.error&&<p className="sensor-note" role="alert">{actual.error} <Button onClick={actual.retry}>Retry</Button></p>}
           {historical&&!actual.days&&!actual.error&&<p className="sensor-note" role="status">Loading the 2000–2025 archive…</p>}
           {historical&&actual.mapDays?.every(day=>day.rows.length===0)&&actual.days&&<p className="sensor-note">No detections in this area for {hasSelectedDay?date:mapFrom+' – '+mapTo} and the selected pass.
@@ -651,6 +692,10 @@ export function App() {
             </>}
           </section>}
           <div className="kpis">
+            {historical&&<section className="wide-kpi">
+              <span>Mapped satellite detections</span>
+              <strong className="mono">{display(mappedDetections)}{actual.complete===false||mapCells.length<cells.length?' (partial)':''}</strong>
+            </section>}
             <section><span><Grid2X2 size={13}/> Active fire cells <InfoTip label="Active fire cells" help="Number of map grid cells containing fire detections for the selected week or day."/></span><strong className="mono">{historical&&!actual.mapDays?'—':units(cells.length,'cells')}</strong></section>
             {hasSelectedDay&&<><section title={historical?'Requires time integration of FRP':undefined}><span><Zap size={13}/> Radiative energy <InfoTip label="Radiative energy" help="Fire radiative energy is the total energy radiated over time. It is estimated by integrating FRP."/></span><strong className="mono">{historical?'—':units(estimates.fre,'TJ')}</strong></section>
             <section className="wide-kpi" title={historical?'Requires a validated area estimate':'FRP ÷ [0.95 × σ × (800⁴ − 300⁴)], expressed in km²'}><span><FocusIcon size={13}/> Estimated fire area</span><strong className="mono">{historical?'—':units(estimates.area,'km²')}</strong></section>

@@ -66,7 +66,7 @@ export function snapshotFromUrl(search=window.location.search):Snapshot {
     areaMode:aoi?'custom':region?.kind==='eco'?'ecoregions':'countries',
     radius:aoi?.type==='circle'?aoi.radius:initialSnapshot.radius,query:region?.name??'',
     pass:pass==='day'||pass==='night'?pass:'all',harmonized:params.get('mode')!=='raw',
-    metric:metric==='frp'||metric==='count'||metric==='z'?metric:initialSnapshot.metric,calendarView:params.get('view')==='ridge'?'ridge':'grid',
+    metric:metric==='count'||metric==='z'?metric:'frp',calendarView:params.get('view')==='ridge'?'ridge':'grid',
     granularity:params.get('granularity')==='day'?'day':undefined,
     camera:{...initialSnapshot.camera,lon:center[0],lat:center[1],zoom:focus.zoom}}
 }
@@ -86,8 +86,9 @@ export function updateViewUrl(settings:Snapshot) {
   if(to!==lastDate)params.set('to',to)
   if(pass!=='all')params.set('pass',pass)
   if(!harmonized)params.set('mode','raw')
-  if(metric!==initialSnapshot.metric)params.set('metric',metric)
   if(settings.granularity==='day')params.set('granularity','day')
+  // Existing shared views omit the metric for FRP. The bare URL uses the new default.
+  if(metric!==initialSnapshot.metric||fields.some(field=>params.has(field)))params.set('metric',metric)
   if(calendarView!=='grid')params.set('view',calendarView)
   if(url.href!==window.location.href)window.history.replaceState(window.history.state,'',url)
 }

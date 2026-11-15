@@ -3,7 +3,6 @@ import type { MultiPolygon, Polygon } from 'geojson'
 import { areaPolygon, firstDate, lastDate, type MapCell, type Coord, type Pass } from './data'
 import { calibration, periodFrpMinimumDays } from './calibration'
 import type { Metric, Snapshot } from './pins'
-import { viirsStart } from './estimates'
 import { datesInRange } from './calendarWeeks'
 
 const configuredApi = import.meta.env.VITE_FIRMS_API
@@ -129,8 +128,8 @@ export function useHistorical(enabled:boolean, request:string, date:string, mapF
     if(!enabled||!queryId)return
     const controller=new AbortController()
     const signal=controller.signal
-    async function fetchCells(day:string,sensor:'modis'|'viirs-snpp') {
-      const base='/queries/'+queryId+'/days/'+day+'/cells?'+gridParams+'&limit=5000&sensor='+sensor
+    async function fetchCells(day:string) {
+      const base='/queries/'+queryId+'/days/'+day+'/cells?'+gridParams+'&limit=5000'
       const rows:CellRow[]=[]
       let cursor:string|null=null
       do{
@@ -146,8 +145,7 @@ export function useHistorical(enabled:boolean, request:string, date:string, mapF
     async function fetchDay(day:string):Promise<MapDay> {
       const previous=cached.get(day)
       if(previous)return previous
-      const viirs=day>=viirsStart?await fetchCells(day,'viirs-snpp'):undefined
-      const result=viirs?.rows.length?viirs:await fetchCells(day,'modis')
+      const result=await fetchCells(day)
       const entry={date:day,...result}
       if(!signal.aborted){
         cached.set(day,entry)
@@ -198,10 +196,10 @@ export function actualDay(day:Day|undefined, pass:Pass) {
 type ActualDay = ReturnType<typeof actualDay>
 export function historicalCalendarValue(date:string, day:ActualDay|undefined, metric:Exclude<Metric,'z'>, harmonized:boolean) {
   const count=metric==='count'
-  const afterTransition=date>=viirsStart
-  if(afterTransition&&day?.viirsCount!=null){
-    const viirs=day[count?'viirsCount':'viirs']
-    return {value:viirs,source:'VIIRS S-NPP',details:viirs===null?'No VIIRS S-NPP value':undefined}
+  const afterTransition=date>=snppArchiveStart
+  const viirs=day?.[count?'viirsCount':'viirs']??null
+  if(afterTransition&&viirs!==null){
+    return {value:viirs,source:'VIIRS S-NPP',details:undefined}
   }
   if(afterTransition||harmonized){
     const modisEstimate=day?.[count?'correctedCount':'corrected']??null
@@ -223,13 +221,16 @@ export function historicalCells(rows:CellRow[], date:string, harmonized:boolean)
     if(group)group.push(row)
     else groups.set(row.cell_id,[row])
   }
-  const adjustModis=date>=viirsStart||harmonized
-  const value=(row:CellRow)=>{
-    if(row.frp_sum_mw===null||!adjustModis||row.platform==='snpp')return row.frp_sum_mw
+  const afterTransition=date>=snppArchiveStart
+  const modisValue=(row:CellRow)=>{
+    if(row.frp_sum_mw===null||!(afterTransition||harmonized))return row.frp_sum_mw
     return row.pass==='unknown'?null:row.frp_sum_mw*calibration.dailyFrp[row.pass]
   }
   return Array.from(groups,([id,group])=>{
-    return {id,center:group[0].center,geometry:group[0].geometry,raw:nullableSum(group.map(value)),
+    const viirs=group.filter(row=>row.platform==='snpp')
+    const modis=group.filter(row=>row.platform!=='snpp')
+    const viirsFrp=afterTransition?nullableSum(viirs.map(row=>row.frp_sum_mw)):null
+    return {id,center:group[0].center,geometry:group[0].geometry,raw:viirsFrp??nullableSum(modis.map(modisValue)),
       weight:group.reduce((sum,row)=>sum+(row.detection_count??0),0),pass:group.some(row=>row.pass==='day')?'day':'night'}
   })
 }

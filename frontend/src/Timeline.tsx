@@ -223,7 +223,7 @@ export function Timeline({date,daySelected,puzzleMode,from,to,playing,onPlay,onD
           <span className="timeline-date mono">{daySelected?prettyDate(date):selection.from+' – '+selection.to}</span>
         </div>
         <div className="timeline-note">
-          {activity?.weekScale&&<CalendarScaleLegend scale={activity.weekScale} metric={metric}/>}
+          {view==='grid'&&activity?.weekScale&&<CalendarScaleLegend scale={activity.weekScale} metric={metric}/>}
           <p>{historical&&!historyReady?'Loading archive values…':metric==='z'?
             'Each week shows the daily Z-score farthest from zero. Blue is below baseline.':
             'Monday–Sunday totals. Hover for coverage, or open a week to select a day.'}</p>
