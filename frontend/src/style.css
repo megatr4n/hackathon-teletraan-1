@@ -754,9 +754,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 .panel-toggle-right.button { right:var(--right-panel); border-radius:5px 0 0 5px }
 .mission-workspace .timeline { position:relative; z-index:5; margin-top:calc(-1 * var(--calendar-overlap)) }
 .mission-workspace .daily-calendar { height:calc(144px + var(--calendar-overlap)); max-height:none }
-.calendar-resize { display:grid; place-items:center; height:14px; cursor:ns-resize; touch-action:none; user-select:none; border-bottom:1px solid #293341 }
-.calendar-resize span { width:38px; height:3px; background:#768597; border-radius:3px; pointer-events:none }
-.calendar-resize:is(:hover,:focus-visible) span { background:#ffad83 }
+.mission-workspace .timeline-top { position:relative }
+.calendar-drag-handle { position:absolute; z-index:1; inset:0 0 auto; height:7px }
+.calendar-drag-handle,.mission-workspace .timeline-title { cursor:ns-resize; touch-action:none; user-select:none }
+.calendar-drag-handle:focus-visible { outline:1px solid #ffad83; outline-offset:-1px }
 @media(max-width:900px) {
   .mission-workspace .workbench { height:485px; min-height:0; grid-template-columns:0 minmax(0,1fr) 0 }
   .mission-workspace .workbench>.filters,.mission-workspace .workbench>.analytics { position:absolute; z-index:3; top:0; bottom:0; grid-area:auto; width:min(320px,calc(100% - 68px)) }

@@ -3,7 +3,7 @@ import { DAY, doy, firstDate, iso, lastDate, prettyDate, years, clampDate } from
 import { archiveDates } from './observations'
 import { dateIndex, viirsStart, type DailyStats } from './estimates'
 import { Button, InfoTip, Segmented, frpHelp, hotspotHelp, zScoreHelp } from './ui'
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import type { CalendarView, Metric } from './pins'
 
 const months=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC']
@@ -121,6 +121,23 @@ export function Timeline({date,from,to,playing,onPlay,onSelect,series,historical
     panel.current?.parentElement?.style.setProperty('--calendar-overlap',overlap+'px')
   },[overlap])
 
+  function startResize(event:ReactPointerEvent<HTMLDivElement>) {
+    if(event.button!==0||!(event.target instanceof Element)||
+      !event.target.closest('.calendar-drag-handle,.timeline-title'))return
+    drag.current={pointerId:event.pointerId,y:event.clientY,overlap}
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }
+  function resize(event:ReactPointerEvent<HTMLDivElement>) {
+    const start=drag.current
+    if(start?.pointerId===event.pointerId)setOverlap(Math.min(limit,Math.max(0,start.overlap+start.y-event.clientY)))
+  }
+  function resizeWithKeyboard(event:KeyboardEvent<HTMLDivElement>) {
+    if(!['ArrowUp','ArrowDown','Home','End'].includes(event.key))return
+    event.preventDefault()
+    setOverlap(current=>event.key==='Home'?0:event.key==='End'?limit:
+      Math.min(limit,Math.max(0,current+(event.key==='ArrowUp'?24:-24))))
+  }
+
   const historical=historicalDays!==undefined
   const min=Date.parse(from), max=Date.parse(to), value=Date.parse(date)
   const change=(amount:number)=>onSelect(iso(Math.min(max,Math.max(min,value+amount*DAY))),true)
@@ -143,25 +160,10 @@ export function Timeline({date,from,to,playing,onPlay,onSelect,series,historical
     .filter(value=>value!==null).length,[from,to,values])
   const periodDays=dateIndex(to,from)+1
   return <section ref={panel} className="timeline" aria-label="Burning activity calendar">
-    <div className="calendar-resize" role="separator" aria-label="Resize calendar" aria-orientation="horizontal"
-      aria-valuemin={0} aria-valuemax={limit} aria-valuenow={overlap} tabIndex={0}
-      onPointerDown={event=>{
-        if(event.button!==0)return
-        drag.current={pointerId:event.pointerId,y:event.clientY,overlap}
-        event.currentTarget.setPointerCapture(event.pointerId)
-      }}
-      onPointerMove={event=>{
-        const start=drag.current
-        if(start?.pointerId===event.pointerId)setOverlap(Math.min(limit,Math.max(0,start.overlap+start.y-event.clientY)))
-      }}
-      onLostPointerCapture={()=>{drag.current=null}}
-      onKeyDown={event=>{
-        if(!['ArrowUp','ArrowDown','Home','End'].includes(event.key))return
-        event.preventDefault()
-        setOverlap(current=>event.key==='Home'?0:event.key==='End'?limit:
-          Math.min(limit,Math.max(0,current+(event.key==='ArrowUp'?24:-24))))
-      }}><span/></div>
-    <div className="timeline-top compact-timeline">
+    <div className="timeline-top compact-timeline" onPointerDown={startResize} onPointerMove={resize}
+      onLostPointerCapture={()=>{drag.current=null}}>
+      <div className="calendar-drag-handle" role="separator" aria-label="Resize calendar" aria-orientation="horizontal"
+        aria-valuemin={0} aria-valuemax={limit} aria-valuenow={overlap} tabIndex={0} onKeyDown={resizeWithKeyboard}/>
       <div className="timeline-title"><span className="section-icon"><CalendarDays size={16}/></span><div><h2>Burning activity calendar</h2><span className="mono">2000–2025 ARCHIVE</span></div></div>
       <DateRangeFields from={from} to={to} onRange={onRange}/>
       <div className="timeline-player">
