@@ -8,8 +8,14 @@ from datetime import date
 from functools import lru_cache
 from pathlib import Path
 
+import shapely
+import yaml
+
 
 REPO = Path(__file__).resolve().parents[3]
+GEOGRAPHY = REPO / "frontend/public/geography"
+GEO_VERSION = "firms-geography-v1"
+METHOD = "firms-canonical-v1"
 
 
 RANGES = {
@@ -78,3 +84,50 @@ def active_release():
     if not root:
         raise DatasetUnavailable("Set FIRMS_DATA_ROOT to an imported release directory")
     return open_release(Path(root).resolve())
+
+
+@lru_cache(maxsize=64)
+def geography_file(name):
+    return json.loads((GEOGRAPHY / f"{name}.json").read_bytes())
+
+
+@lru_cache(maxsize=1)
+def presets():
+    return yaml.safe_load((REPO / "config/regions.yaml").read_text(encoding="utf-8"))["regions"]
+
+
+def catalog_feature(kind, identifier, parent=None):
+    if kind == "preset":
+        item = next((item for item in presets() if item["id"] == identifier), None)
+        if item:
+            return {"type": "Feature", "properties": item, "geometry": shapely.geometry.mapping(
+                shapely.box(*item["bbox"])
+            )}
+    if kind == "admin" and parent and re.fullmatch(r"[A-Z0-9]{3}", parent):
+        name = f"admin/{parent}"
+    else:
+        name = {"country": "countries", "eco": "ecoregions"}.get(kind)
+    if name:
+        try:
+            return next(
+                feature for feature in geography_file(name)["features"]
+                if str(feature["properties"]["id"]) == identifier
+            )
+        except (StopIteration, FileNotFoundError):
+            pass
+    raise LookupError("Unknown territory")
+
+
+def catalog_items(kind, parent):
+    if kind == "preset":
+        return [{"id": item["id"], "name": item["name_en"]} for item in presets()]
+    if kind == "admin":
+        if not parent or not re.fullmatch(r"[A-Z0-9]{3}", parent):
+            return []
+        name = f"admin/{parent}"
+    else:
+        name = {"country": "countries", "eco": "ecoregions"}[kind]
+    try:
+        return [feature["properties"] for feature in geography_file(name)["features"]]
+    except FileNotFoundError:
+        return []
