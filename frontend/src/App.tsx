@@ -597,7 +597,7 @@ export function App() {
     <Timeline date={date} from={from} to={to} playing={playing} onPlay={()=>{stopTour(false);setHasSelectedDay(true);setPlaying(value=>!value)}}
       onSelect={selectDate} series={series} historicalDays={historicalCalendar} historyReady={Boolean(actual.days)} harmonized={harmonized} onRange={range} metric={metric} view={calendarView}
       onMetric={value=>setSettings(current=>({...current,metric:value}))} onView={value=>setSettings(current=>({...current,calendarView:value}))}/>
-    <footer className="footer mono"><span><span className="live-dot"/> DEMO TELEMETRY <i/> KEPLER.GL</span><span><TriangleAlert size={12}/> SYNTHETIC FIRE OBSERVATIONS</span></footer>
+    <footer className="footer mono"><span><span className="live-dot"/> {historical?'HISTORICAL TELEMETRY':'DEMO TELEMETRY'} <i/> KEPLER.GL</span><span><TriangleAlert size={12}/> {historical?'NASA FIRMS OBSERVATIONS':'SYNTHETIC FIRE OBSERVATIONS'}</span></footer>
     {message&&<div className="toast" role="status">{message}</div>}
 
     <Dialog.Root open={dialog} onOpenChange={setDialog}>
