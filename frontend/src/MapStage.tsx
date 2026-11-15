@@ -1,6 +1,6 @@
-import { lazy, Suspense, useCallback, useEffect, useId, useMemo, useRef, useState, type PointerEvent, type ReactNode } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from 'react'
 import maplibregl, { type GeoJSONSource, type RasterTileSource, type StyleSpecification } from 'maplibre-gl'
-import { Box, ChevronLeft, ChevronRight, Expand, Grid3X3, Layers3, Map as MapIcon, Minus, Plus, Ruler, Satellite, Shrink, Target } from 'lucide-react'
+import { Box, Grid3X3, Layers3, Map as MapIcon, Minus, Plus, Ruler, Satellite, Target } from 'lucide-react'
 import type { FeatureCollection, Geometry } from 'geojson'
 import { calibration } from './calibration'
 import { areaPolygon, cellPolygon, contains, coord, distance, offset, type Aoi, type MapCell, type Coord, type Focus } from './data'
@@ -23,7 +23,7 @@ const KeplerMap = lazy(() => loadKepler().then(module => ({default:module.Kepler
 export type Tool = 'circle' | 'lasso' | null
 type Props = {
   focus:Focus; date:string; cells:MapCell[]; harmonized:boolean; aoi:Aoi|null; tool:Tool;
-  onArea:(area:Aoi)=>void; onCirclePreviewRadius:(radius:number|null)=>void; expandedFilters:ReactNode;
+  onArea:(area:Aoi)=>void; onCirclePreviewRadius:(radius:number|null)=>void;
   command:CameraCommand|null; onCamera:(camera:Camera)=>void;
   options:MapOptions; onOptions:(options:MapOptions)=>void;
   countries:RegionCollection; admins:RegionCollection; ecoregions:RegionCollection; areaMode:AreaMode;
@@ -100,17 +100,13 @@ function hazardShape(center:Coord,x:number,y:number,rx:number,ry:number,z:number
   return {type:'Feature' as const,properties:{z},geometry:{type:'Polygon' as const,coordinates:[[...ring,ring[0]]]}}
 }
 
-export function MapStage({focus,date,cells,harmonized,aoi,tool,onArea,onCirclePreviewRadius,expandedFilters,command,onCamera,options,onOptions,
+export function MapStage({focus,date,cells,harmonized,aoi,tool,onArea,onCirclePreviewRadius,command,onCamera,options,onOptions,
   countries,admins,ecoregions,areaMode,selected,onRegion,measuring,orbiting,onTourEnd,historical}:Props) {
   const holder=useRef<HTMLDivElement>(null), map=useRef<maplibregl.Map|null>(null)
   const fire=useRef<FirePillars|null>(null), places=useRef<maplibregl.Marker[]>([])
   const [ready,setReady]=useState(false)
   const [camera,setCamera]=useState(initialSnapshot.camera)
   const [size,setSize]=useState({width:0,height:0})
-  const [expanded,setExpanded]=useState(false)
-  const [filtersOpen,setFiltersOpen]=useState(false)
-  const filtersId=useId()
-  const filterToggle=useRef<HTMLButtonElement>(null)
   const [trace,setTrace]=useState<[number,number][]>([])
   const [segments,setSegments]=useState<[Coord,Coord][]>([])
   const [draft,setDraft]=useState<[Coord,Coord]|null>(null)
@@ -316,19 +312,6 @@ export function MapStage({focus,date,cells,harmonized,aoi,tool,onArea,onCirclePr
     if(!measuring){setSegments([]);setDraft(null);ruler.current=null}
   },[measuring])
 
-  useEffect(()=>{
-    if(!expanded)return
-    const exit=(event:KeyboardEvent)=>{
-      if(event.key!=='Escape'||event.defaultPrevented||document.querySelector('[role="dialog"][data-state="open"]'))return
-      if(filtersOpen){
-        setFiltersOpen(false)
-        filterToggle.current?.focus()
-      }else setExpanded(false)
-    }
-    window.addEventListener('keydown',exit)
-    return ()=>window.removeEventListener('keydown',exit)
-  },[expanded,filtersOpen])
-
   const clearCircle=useCallback(()=>{
     const drag=circleDrag.current
     if(!drag)return
@@ -446,7 +429,7 @@ export function MapStage({focus,date,cells,harmonized,aoi,tool,onArea,onCirclePr
   const circleEnd=circleLine&&map.current?.project(circleLine[1])
   const bearing = Math.round(camera.bearing)%360
   const cardinal = ['N','NE','E','SE','S','SW','W','NW'][Math.round(bearing/45)%8]
-  return <section className={'map-stage '+(expanded?'map-expanded':'')} aria-label="Wildfire map viewport">
+  return <section className="map-stage" aria-label="Wildfire map viewport">
     <div ref={holder} className="map-canvas" onPointerDownCapture={event=>{pointer.current={x:event.clientX,y:event.clientY}}}
       onPointerUpCapture={selectAtPoint}>
       {size.width>0&&<Suspense fallback={<div className="map-loading">Loading Kepler.gl…</div>}>
@@ -505,16 +488,7 @@ export function MapStage({focus,date,cells,harmonized,aoi,tool,onArea,onCirclePr
         <Button title="Zoom in" aria-label="Zoom in" onClick={()=>changeCamera({zoom:Math.min(17,camera.zoom+1)},280)}><Plus size={17}/></Button>
         <Button title="Zoom out" aria-label="Zoom out" onClick={()=>changeCamera({zoom:Math.max(1,camera.zoom-1)},280)}><Minus size={17}/></Button>
       </div>
-      <Button className="expand-control" title={expanded?'Restore viewport':'Expand viewport'} aria-label={expanded?'Restore viewport':'Expand viewport'} onClick={()=>{setExpanded(!expanded);setFiltersOpen(false)}}>{expanded?<Shrink size={15}/>:<Expand size={15}/>}</Button>
     </div>
-    {expanded&&<div className="map-filter-dock" data-open={filtersOpen}>
-      <aside className="map-filter-panel filters" id={filtersId} inert={!filtersOpen} aria-label="Map filters">
-        {expandedFilters}
-      </aside>
-      <Button ref={filterToggle} className="map-filter-toggle" aria-expanded={filtersOpen} aria-controls={filtersId}
-        aria-label={filtersOpen?'Hide map filters':'Show map filters'} title={filtersOpen?'Hide map filters':'Show map filters'}
-        onClick={()=>setFiltersOpen(value=>!value)}>{filtersOpen?<ChevronLeft size={18}/>:<ChevronRight size={18}/>}</Button>
-    </div>}
     <div className="camera-bar">
       <span><b>LAT</b> {coord(camera.lat,'lat')}</span><span><b>LON</b> {coord(camera.lon,'lon')}</span>
       <span><b>ZOOM</b> {camera.zoom.toFixed(1)}</span><span><b>BRG</b> {String(bearing).padStart(3,'0')}° {cardinal}</span><span><b>PITCH</b> {Math.round(camera.pitch)}°</span>

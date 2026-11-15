@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
-import { Activity, ArrowDown, ArrowDownToLine, ArrowUpRight, Bookmark, BookmarkPlus, Camera as CameraIcon, Circle, Clock3, CodeXml, Crosshair, Database, FileText, Focus as FocusIcon, Grid2X2, Layers3, Lasso, Leaf, MapPin, Puzzle as PuzzleIcon, Ruler, Search, SlidersHorizontal, Satellite, TriangleAlert, X, Zap } from 'lucide-react'
+import { Activity, ArrowDown, ArrowDownToLine, ArrowUpRight, Bookmark, BookmarkPlus, Camera as CameraIcon, Circle, ChevronLeft, ChevronRight, Clock3, CodeXml, Crosshair, Database, FileText, Focus as FocusIcon, Grid2X2, Layers3, Lasso, Leaf, MapPin, Puzzle as PuzzleIcon, Ruler, Search, SlidersHorizontal, Satellite, TriangleAlert, X, Zap } from 'lucide-react'
 import { areaPolygon, cellPolygon, clampDate, DAY, doy, firstDate, iso, maxCircleRadius, number, prettyDate, territories, type Aoi, type Cell, type Coord } from './data'
 import { calibration, calibrationAccuracy } from './calibration'
 import { cellObservations, dailyEstimates, dailyStats, dateIndex, periodStats, viirsStart } from './estimates'
@@ -8,7 +8,7 @@ import { archiveDates, observations } from './observations'
 import { countryOptions, emptyRegions, focusForRegion, geography, type AreaMode, type Region, type RegionCollection, type RegionFeature } from './geography'
 import { MapStage, type Tool } from './MapStage'
 import { initialSnapshot, readPins, writePins, type Camera, type Pin, type Snapshot } from './pins'
-import { DateRangeFields, Timeline } from './Timeline'
+import { Timeline } from './Timeline'
 import { Button, Segmented } from './ui'
 import { PuzzleDropdown } from './PuzzlePanels'
 import { puzzleFocus, type Puzzle } from './dailyPuzzle'
@@ -27,6 +27,7 @@ function UtcClock() {
   return <span className="mission-clock mono" aria-label="UTC clock"><Clock3 size={13}/>{time} <b>UTC</b></span>
 }
 
+const narrowWorkbench='(max-width: 900px)'
 const normalize=(value:string)=>value.normalize('NFD').replace(/\p{Diacritic}/gu,'').toLowerCase()
 const countryAliases = new Map(territories.map(country=>[country.iso3,normalize(country.name_uk)]))
 
@@ -100,6 +101,14 @@ export function App() {
   const {focus,region,date,from,to,pass,harmonized,areaMode,aoi,radius,query,options,metric,calendarView}=settings
   const camera=useRef(settings.camera)
   const [command,setCommand]=useState<CameraCommand|null>(()=>settings===initialSnapshot?null:{camera:settings.camera,duration:0})
+  const [filtersOpen,setFiltersOpen]=useState(()=>!window.matchMedia(narrowWorkbench).matches)
+  const [analyticsOpen,setAnalyticsOpen]=useState(()=>!window.matchMedia(narrowWorkbench).matches)
+  useEffect(()=>{
+    const layout=window.matchMedia(narrowWorkbench)
+    const closePanels=()=>{if(layout.matches){setFiltersOpen(false);setAnalyticsOpen(false)}}
+    layout.addEventListener('change',closePanels)
+    return ()=>layout.removeEventListener('change',closePanels)
+  },[])
   const [tool,setTool]=useState<Tool>(null)
   const [circlePreviewRadius,setCirclePreviewRadius]=useState<number|null>(null)
   const [dialog,setDialog]=useState(false)
@@ -508,18 +517,30 @@ export function App() {
         </div>
     </header>
 
-    <div className="workbench">
-      <aside className="filters">{queryFilters()}</aside>
+    <div className="mission-workspace">
+    <div className="workbench" data-filters-open={filtersOpen} data-analytics-open={analyticsOpen}>
+      <aside className="filters" id="query-filters" aria-label="Query filters" hidden={!filtersOpen}>{queryFilters()}</aside>
+      <Button className="panel-toggle panel-toggle-left" aria-expanded={filtersOpen} aria-controls="query-filters"
+        aria-label={filtersOpen?'Hide query filters':'Show query filters'} onClick={()=>{
+          if(!filtersOpen&&window.matchMedia(narrowWorkbench).matches)setAnalyticsOpen(false)
+          setFiltersOpen(!filtersOpen)
+        }}>
+        {filtersOpen?<ChevronLeft size={18}/>:<ChevronRight size={18}/>}
+      </Button>
 
       <MapStage focus={focus} date={date} cells={cells} historical={historical} harmonized={!historical&&harmonized} aoi={aoi} tool={tool} onArea={updateArea} onCirclePreviewRadius={setCirclePreviewRadius}
-        expandedFilters={<>{queryFilters()}<section className="filter-section map-dates">
-          <DateRangeFields from={from} to={to} onRange={range}/>
-        </section></>}
         command={command} onCamera={value=>{camera.current=value}} options={options} onOptions={next=>setSettings(current=>({...current,options:next}))}
         countries={countries} admins={admins} ecoregions={ecoregions} areaMode={areaMode} selected={selected} onRegion={selectMapRegion}
         measuring={measuring} orbiting={orbiting} onTourEnd={()=>showTourStop(tourStop)}/>
 
-      <aside className="analytics">
+      <Button className="panel-toggle panel-toggle-right" aria-expanded={analyticsOpen} aria-controls="analytics-panel"
+        aria-label={analyticsOpen?'Hide analytics':'Show analytics'} onClick={()=>{
+          if(!analyticsOpen&&window.matchMedia(narrowWorkbench).matches)setFiltersOpen(false)
+          setAnalyticsOpen(!analyticsOpen)
+        }}>
+        {analyticsOpen?<ChevronRight size={18}/>:<ChevronLeft size={18}/>}
+      </Button>
+      <aside className="analytics" id="analytics-panel" aria-label="Analytics and export" hidden={!analyticsOpen}>
         <div className="panel-header"><span className="section-icon"><Activity size={16}/></span><h2>Analytics &amp; export</h2></div>
         <div className="accuracy-wrap"><span className="accuracy mono" title="Validation metrics for the calibration benchmark"><Activity size={13}/> WAPE {calibrationAccuracy.holdout_daytime_wape_2025} <i/> BIAS {calibrationAccuracy.west_us_bias}</span></div>
         <div className="analytics-scroll">
@@ -597,6 +618,7 @@ export function App() {
     <Timeline date={date} from={from} to={to} playing={playing} onPlay={()=>{stopTour(false);setHasSelectedDay(true);setPlaying(value=>!value)}}
       onSelect={selectDate} series={series} historicalDays={historicalCalendar} historyReady={Boolean(actual.days)} harmonized={harmonized} onRange={range} metric={metric} view={calendarView}
       onMetric={value=>setSettings(current=>({...current,metric:value}))} onView={value=>setSettings(current=>({...current,calendarView:value}))}/>
+    </div>
     <footer className="footer mono"><span><span className="live-dot"/> {historical?'HISTORICAL TELEMETRY':'DEMO TELEMETRY'} <i/> KEPLER.GL</span><span><TriangleAlert size={12}/> {historical?'NASA FIRMS OBSERVATIONS':'SYNTHETIC FIRE OBSERVATIONS'}</span></footer>
     {message&&<div className="toast" role="status">{message}</div>}
 
