@@ -3,7 +3,7 @@ import maplibregl, { type GeoJSONSource, type RasterTileSource, type StyleSpecif
 import { Box, ChevronLeft, ChevronRight, Expand, Grid3X3, Layers3, Map as MapIcon, Minus, Plus, Ruler, Satellite, Shrink, Target } from 'lucide-react'
 import type { FeatureCollection, Geometry } from 'geojson'
 import { calibration } from './calibration'
-import { areaPolygon, cellPolygon, contains, coord, distance, offset, type Aoi, type Cell, type Coord, type Focus } from './data'
+import { areaPolygon, cellPolygon, contains, coord, distance, offset, type Aoi, type MapCell, type Coord, type Focus } from './data'
 import { FirePillars } from './pillars'
 import { Button } from './ui'
 import { asset, type AreaMode, type RegionCollection, type RegionFeature } from './geography'
@@ -22,13 +22,13 @@ const KeplerMap = lazy(() => loadKepler().then(module => ({default:module.Kepler
 
 export type Tool = 'circle' | 'lasso' | null
 type Props = {
-  focus:Focus; date:string; cells:Cell[]; harmonized:boolean; aoi:Aoi|null; tool:Tool;
+  focus:Focus; date:string; cells:MapCell[]; harmonized:boolean; aoi:Aoi|null; tool:Tool;
   onArea:(area:Aoi)=>void; onCirclePreviewRadius:(radius:number|null)=>void; expandedFilters:ReactNode;
   command:CameraCommand|null; onCamera:(camera:Camera)=>void;
   options:MapOptions; onOptions:(options:MapOptions)=>void;
   countries:RegionCollection; admins:RegionCollection; ecoregions:RegionCollection; areaMode:AreaMode;
   selected:RegionFeature|undefined; onRegion:(region:RegionFeature,point?:Coord)=>void;
-  measuring:boolean; orbiting:boolean; onTourEnd:()=>void;
+  measuring:boolean; orbiting:boolean; onTourEnd:()=>void; historical:boolean;
 }
 const empty: FeatureCollection = {type:'FeatureCollection',features:[]}
 const satelliteTiles = (date:string) => 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Terra_CorrectedReflectance_TrueColor/default/'+date+'/GoogleMapsCompatible_Level9/{z}/{y}/{x}.jpg'
@@ -49,6 +49,7 @@ function mapStyle(): StyleSpecification {
     satellite:{type:'raster',tiles:[satelliteTiles('2020-04-14')],tileSize:256,maxzoom:9,attribution:'NASA EOSDIS GIBS'},
     grid:{type:'geojson',data:empty},
     fires:{type:'geojson',data:empty},
+    fireCenters:{type:'geojson',data:empty},
     hazard:{type:'geojson',data:empty},
     area:{type:'geojson',data:empty},
     circlePreview:{type:'geojson',data:empty},
@@ -88,6 +89,7 @@ function mapStyle(): StyleSpecification {
     {id:'circle-preview-fill',type:'fill',source:'circlePreview',paint:{'fill-color':'#4ac7e8','fill-opacity':.08}},
     {id:'circle-preview-line',type:'line',source:'circlePreview',paint:{'line-color':'#65d7f3','line-width':1.35,'line-dasharray':[3,2]}},
     {id:'fire-footprint',type:'fill',source:'fires',paint:{'fill-color':['interpolate',['linear'],['get','power'],0,'#8c3626',35,'#e65c2b',140,'#ffa354'],'fill-opacity':.85}},
+    {id:'fire-centers',type:'circle',source:'fireCenters',maxzoom:8,paint:{'circle-radius':['interpolate',['linear'],['zoom'],2,1.3,5,2.1,8,2.5],'circle-color':'#fb883f','circle-opacity':.82}},
     {id:'crosshair',type:'line',source:'target',paint:{'line-color':'#e69b61','line-width':1.15,'line-opacity':.75}},
   ]}
 }
@@ -99,7 +101,7 @@ function hazardShape(center:Coord,x:number,y:number,rx:number,ry:number,z:number
 }
 
 export function MapStage({focus,date,cells,harmonized,aoi,tool,onArea,onCirclePreviewRadius,expandedFilters,command,onCamera,options,onOptions,
-  countries,admins,ecoregions,areaMode,selected,onRegion,measuring,orbiting,onTourEnd}:Props) {
+  countries,admins,ecoregions,areaMode,selected,onRegion,measuring,orbiting,onTourEnd,historical}:Props) {
   const holder=useRef<HTMLDivElement>(null), map=useRef<maplibregl.Map|null>(null)
   const fire=useRef<FirePillars|null>(null), places=useRef<maplibregl.Marker[]>([])
   const [ready,setReady]=useState(false)
@@ -273,11 +275,14 @@ export function MapStage({focus,date,cells,harmonized,aoi,tool,onArea,onCirclePr
     if (!ready || !instance) return
     const set=(name:string,data:FeatureCollection<Geometry>)=>(instance.getSource(name) as GeoJSONSource).setData(data)
     set('grid',collection(cells.map(cell=>cellPolygon(cell))))
-    set('fires',collection(cells.map(cell=>{
+    set('fires',collection(cells.flatMap(cell=>{
+      if(cell.raw===null)return []
       const item=cellPolygon(cell,.72)
       return {...item,properties:{...item.properties,power:cell.raw*(harmonized?calibration.dailyFrp[cell.pass]:1)}}
     })))
-    const hazards = cells.length ? [hazardShape(focus.center,6,-1,64,40,1.5),hazardShape(focus.center,-12,13,24,13,2.5),hazardShape(focus.center,25,-12,31,16,2.5)] : []
+    set('fireCenters',collection(historical?cells.map(cell=>({type:'Feature',properties:{},
+      geometry:{type:'Point',coordinates:cell.center}})):[]))
+    const hazards = !historical && cells.length ? [hazardShape(focus.center,6,-1,64,40,1.5),hazardShape(focus.center,-12,13,24,13,2.5),hazardShape(focus.center,25,-12,31,16,2.5)] : []
     set('hazard',collection(hazards))
     set('area',collection(aoi ? [{type:'Feature',geometry:areaPolygon(aoi),properties:{}}] : selected ? [selected] : []))
     set('target',collection([{type:'Feature',properties:{},geometry:{type:'MultiLineString',coordinates:[
@@ -285,7 +290,7 @@ export function MapStage({focus,date,cells,harmonized,aoi,tool,onArea,onCirclePr
       [offset(focus.center,0,-4),offset(focus.center,0,-1.7)],[offset(focus.center,0,1.7),offset(focus.center,0,4)],
     ]}}]))
     fire.current?.update(cells,harmonized)
-  },[cells,focus,harmonized,ready,aoi,selected])
+  },[cells,focus,harmonized,ready,aoi,selected,historical])
 
   useEffect(()=>{
     const instance=map.current

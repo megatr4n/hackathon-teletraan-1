@@ -1,4 +1,4 @@
-import { defineConfig, searchForWorkspaceRoot } from 'vite'
+import { defineConfig, loadEnv, searchForWorkspaceRoot } from 'vite'
 import { fileURLToPath } from 'node:url'
 import react from '@vitejs/plugin-react'
 import tailwind from '@tailwindcss/vite'
@@ -6,7 +6,7 @@ import { createRequire } from 'node:module'
 
 const resolve = createRequire(import.meta.url).resolve
 
-export default defineConfig({
+export default defineConfig(({mode}) => ({
   resolve: { alias: { assert: resolve('assert/'), events: resolve('events/'), buffer: resolve('buffer/'), process: resolve('process/browser') }, dedupe: ['react','react-dom','react-redux','styled-components'] },
   define: { global: 'globalThis' },
   optimizeDeps: {
@@ -20,6 +20,9 @@ export default defineConfig({
   server: {
     port: 5173,
     host: true,
+    proxy: {
+      '/api/v2': {target: loadEnv(mode, process.cwd()).VITE_FIRMS_API || 'http://127.0.0.1:8000', changeOrigin:true},
+    },
     fs: {
       allow: [searchForWorkspaceRoot(process.cwd()), fileURLToPath(new URL('../config', import.meta.url))],
     },
@@ -28,4 +31,4 @@ export default defineConfig({
     rollupOptions: { output: { manualChunks: { map: ['maplibre-gl'] } } },
     chunkSizeWarningLimit: 1200,
   },
-})
+}))

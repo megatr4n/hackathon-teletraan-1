@@ -258,3 +258,52 @@ export async function exportStatisticalReport(report:Report) {
   pdf.save(filename)
 }
 
+
+type ObservedTotals = {
+  platform: 'terra'|'aqua'|'snpp'
+  detection_count: number|null
+  frp_sum_mw: number|null
+}
+
+export type HistoricalReport = {
+  dataset_release: string
+  day: {date:string; platforms:ObservedTotals[]; z_score:number|null}
+  period: (ObservedTotals & {
+    requested_days:number
+    days_with_records:number
+    days_with_valid_metric:number
+    mean_observed_daily_frp_mw:number|null
+  })[]
+}
+
+export async function exportHistoricalReport(settings:Snapshot,report:HistoricalReport,from:string,to:string) {
+  const pdf=new jsPDF()
+  pdf.addFileToVFS('NotoSans-Regular.ttf',await loadFont())
+  pdf.addFont('NotoSans-Regular.ttf','Noto Sans','normal')
+  heading(pdf,'FIRMS historical observations',margin,24,20)
+  const platforms={terra:'Terra MODIS',aqua:'Aqua MODIS',snpp:'S-NPP VIIRS'}
+  const details:[string,string][]=[
+    ['Selected area',settings.focus.name],
+    ['Orbital pass',passLabels[settings.pass]],
+    ['Dataset release',report.dataset_release],
+    ['Selected day',report.day.date],
+    ['Report period',from+' to '+to],
+    ['MODIS Z-score',report.day.z_score===null?'Unavailable':report.day.z_score.toFixed(2)],
+  ]
+  let y=passport(pdf,details,33)+11
+  heading(pdf,'Selected day',margin,y)
+  const daily:[string,string][]=report.day.platforms.map(row=>[
+    platforms[row.platform],display(row.detection_count)+' detections  |  '+display(row.frp_sum_mw)+' MW FRP',
+  ])
+  y=passport(pdf,daily,y+4)+11
+  heading(pdf,'Period by platform',margin,y)
+  const observed:[string,string][]=report.period.map(row=>[
+    platforms[row.platform],
+    display(row.detection_count)+' detections  |  '+display(row.frp_sum_mw)+' MW FRP sum  |  '+
+      display(row.mean_observed_daily_frp_mw)+' MW mean on '+row.days_with_valid_metric+' days with FRP  |  '+
+      row.days_with_records+'/'+row.requested_days+' days with detections',
+  ])
+  y=passport(pdf,observed,y+4)
+  text(pdf,'Source: NASA FIRMS. A dash represents an unavailable observation.',margin,y+8,8,muted)
+  pdf.save('teletraan-1-'+report.day.date+'-historical-report.pdf')
+}

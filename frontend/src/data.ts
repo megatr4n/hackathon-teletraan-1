@@ -94,9 +94,10 @@ export function contains(point: Coord, geometry: Polygon|MultiPolygon) {
   const polygons = geometry.type === 'Polygon' ? [geometry.coordinates] : geometry.coordinates
   return polygons.some(([outer, ...holes]) => inside(point, outer) && !holes.some(hole => inside(point, hole)))
 }
-export type Cell = { id:string; center:Coord; weight:number; pass:'day'|'night'; raw:number }
-export function cellPolygon(cell: Cell, halfSide = 1.5): Feature<Polygon> {
+export type Cell = { id:string; center:Coord; weight:number; pass:'day'|'night'; raw:number; geometry?:Polygon|MultiPolygon }
+export type MapCell = Omit<Cell,'raw'> & { raw:number|null }
+export function cellPolygon(cell: MapCell, halfSide = 1.5): Feature<Polygon|MultiPolygon> {
   const corners = [[-halfSide,-halfSide],[halfSide,-halfSide],[halfSide,halfSide],[-halfSide,halfSide],[-halfSide,-halfSide]]
-  return { type:'Feature', geometry:{type:'Polygon',coordinates:[corners.map(([x,y])=>offset(cell.center,x,y))]}, properties:{id:cell.id,raw_mw:cell.raw,pass:cell.pass} }
+  return { type:'Feature', geometry:cell.geometry??{type:'Polygon',coordinates:[corners.map(([x,y])=>offset(cell.center,x,y))]}, properties:{id:cell.id,raw_mw:cell.raw,pass:cell.pass} }
 }
 export const years = Array.from({length:26},(_,i) => 2025-i)
