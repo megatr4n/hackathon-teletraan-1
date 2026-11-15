@@ -1,4 +1,4 @@
-import { calibration } from '../calibration'
+import { aquaArchiveStart, calibration, harmonizeHistoricalCount } from '../calibration'
 
 export type Platform = 'terra'|'aqua'|'snpp'
 export type Pass = 'all'|'day'|'night'
@@ -13,7 +13,7 @@ export type HistoricalReport = {
   report_start:string; report_end:string; day:ReportDay; series:ReportDay[]; period:Summary[]
   methodology:Record<string,unknown>
 }
-export const reportVersion='firms-evidence-v2'
+export const reportVersion='firms-evidence-v3'
 export const viirsArchiveStart='2012-01-20'
 export const platformLabels={terra:'Terra MODIS',aqua:'Aqua MODIS',snpp:'S-NPP VIIRS'}
 export const finite=(n:unknown):n is number=>typeof n==='number'&&Number.isFinite(n)
@@ -30,13 +30,12 @@ export function quantile(values:number[],q:number):number|null {
   const sorted=[...values].sort((a,b)=>a-b), index=(sorted.length-1)*q, lo=Math.floor(index), hi=Math.ceil(index)
   return sorted[lo]+(sorted[hi]-sorted[lo])*(index-lo)
 }
-export const aquaArchiveStart='2002-07-04'
-
 export function dailyCount(day:ReportDay,pass:Pass) {
   const terra=day.platforms.find(p=>p.platform==='terra')?.detection_count??null
   const aqua=day.date<aquaArchiveStart?null:day.platforms.find(p=>p.platform==='aqua')?.detection_count??null
   const viirs=day.date<viirsArchiveStart?null:day.platforms.find(p=>p.platform==='snpp')?.detection_count??null
-  return {date:day.date,raw:sum([terra,aqua]),aqua,adjusted:aqua===null?null:aqua*calibration.hotspots[pass],viirs}
+  const adjusted=harmonizeHistoricalCount(day.date,day.platforms,pass)
+  return {date:day.date,raw:sum([terra,aqua]),aqua,adjusted:adjusted.value,adjustedPlatform:adjusted.platform,viirs}
 }
 export function dailySeries(report:HistoricalReport) {
   return report.series.map(day=>dailyCount(day,report.pass))
@@ -55,11 +54,12 @@ export function countBins(report:HistoricalReport) {
   return {monthly,rows:bins(dailySeries(report),monthly).map(days=>({
     date:days[0].date, end:days.at(-1)!.date, requested:days.length,
     raw:mean(days.map(d=>d.raw)),adjusted:mean(days.map(d=>d.adjusted)),viirs:mean(days.map(d=>d.viirs)),
-    nModis:days.filter(d=>d.raw!==null).length,nAqua:days.filter(d=>d.aqua!==null).length,nViirs:days.filter(d=>d.viirs!==null).length,
+    nModis:days.filter(d=>d.raw!==null).length,nAqua:days.filter(d=>d.aqua!==null).length,
+    nAdjusted:days.filter(d=>d.adjusted!==null).length,nViirs:days.filter(d=>d.viirs!==null).length,
   }))}
 }
 export function pairedCounts(days:DailyCount[]) {
-  const pairs=days.filter((d):d is DailyCount & {aqua:number;adjusted:number;viirs:number}=>d.aqua!==null&&d.adjusted!==null&&d.viirs!==null)
+  const pairs=days.filter((d):d is DailyCount & {aqua:number;adjusted:number;viirs:number}=>d.adjustedPlatform==='aqua'&&d.aqua!==null&&d.adjusted!==null&&d.viirs!==null)
   const reference=sum(pairs.map(d=>d.viirs))
   const stats=(key:'aqua'|'adjusted')=>{
     const errors=pairs.map(d=>d[key]-d.viirs)
@@ -124,13 +124,13 @@ export function validateReport(report:HistoricalReport,from:string,to:string,que
 export function reportEvidence(report:HistoricalReport,generatedAt:string) {
   validateReport(report,report.report_start,report.report_end)
   return {report_version:reportVersion,generated_at_utc:generatedAt,source_payload:report,
-    derivations:{count_formula:'Aqua MODIS detections * K_COUNT[pass]',
+    derivations:{count_formula:'Terra MODIS detections before '+aquaArchiveStart+', Aqua MODIS detections from that UTC date onward, multiplied by K_COUNT[pass]',
       raw_modis_formula:'Sum available Terra and Aqua detections. Null if neither has records.',
       comparison_baseline:'Raw Aqua MODIS and adjusted Aqua MODIS on the same dates as observed VIIRS',
       aqua_archive_start:aquaArchiveStart,
       coefficients:calibration.hotspots,coefficient_source:'config/modis_viirs_coefficients.csv',
       selected_coefficient:calibration.hotspots[report.pass],viirs_archive_start:viirsArchiveStart,
       aggregation:report.series.length>120?'calendar-month mean of daily values with records':'daily',
-      missing_policy:'null preserved; no interpolation, imputation or VIIRS fallback',
+      missing_policy:'Null when the selected platform has no observations for the date. No interpolation or platform substitution.',
       counts:dailySeries(report),count_chart:countBins(report),paired_count_diagnostics:pairedCounts(dailySeries(report))}}
 }

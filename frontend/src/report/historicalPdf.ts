@@ -1,6 +1,6 @@
 import { jsPDF } from 'jspdf'
-import { calibration } from '../calibration'
-import { aquaArchiveStart, bins, countBins, dailyCount, dailySeries, finite, mean, pairedCounts, platformLabels, quantile, reportVersion, sum, validateReport, viirsArchiveStart } from './analysis'
+import { aquaArchiveStart, calibration, historicalCountPlatform } from '../calibration'
+import { bins, countBins, dailyCount, dailySeries, finite, mean, pairedCounts, platformLabels, quantile, reportVersion, sum, validateReport, viirsArchiveStart } from './analysis'
 import type { HistoricalReport } from './analysis'
 
 const ink='#142B3E',muted='#536575',rule='#D7DFE5',blue='#166A98',orange='#B45C16',gray='#5C6974'
@@ -91,7 +91,7 @@ export function buildHistoricalPdf(report:HistoricalReport,areaLabel:string,font
       pdf.setLineDashPattern([],0);text(line.label,46,py,8,line.color)
     })
   }
-  page('01 / Scope & provenance','FIRMS observation report','Archived satellite observations, reproducible statistics and a documented Aqua MODIS count adjustment.')
+  page('01 / Scope & provenance','FIRMS observation report','Archived satellite observations, reproducible statistics and a documented MODIS count adjustment.')
   let y=table(['Selection','Value'],[
     ['Area label',areaLabel||JSON.stringify(report.area)],
     ['Exact selection',JSON.stringify(report.area).length>150?'Custom geometry; coordinates are retained in report evidence JSON.':JSON.stringify(report.area)],
@@ -106,24 +106,30 @@ export function buildHistoricalPdf(report:HistoricalReport,areaLabel:string,font
   y=para('Query: '+report.query_id+' | Report method: '+reportVersion,y,8)
   y=para('Reading this report',y+3,12,ink)
   if(report.area.kind==='preset')y=para('Preset statistics cover the full bounding box above. The display name does not restrict them to the named fire incident or its perimeter.',y,8)
-  y=para('Raw values come from the verified FIRMS archive. Harmonized Aqua counts are estimates calculated from observed Aqua MODIS records using the configured project coefficient.',y)
+  y=para('Raw values come from the verified FIRMS archive. Harmonized counts apply the configured project coefficient to Terra records before '+aquaArchiveStart+' and Aqua records from that date onward.',y)
   para('Detections count satellite records, not distinct fires or burned area. Missing records do not establish an absence of fire. This report does not estimate fire energy, emissions, damage or a calibrated risk probability.',y)
 
-  page('02 / Counts','Satellite detection counts','Raw MODIS combines Terra and Aqua. The adjusted series uses Aqua MODIS. Each series starts when its archive has records.')
+  page('02 / Counts','Satellite detection counts','Raw MODIS combines available Terra and Aqua records. The harmonized series switches from Terra to Aqua at the Aqua archive start.')
   const counts=dailySeries(report),grouped=countBins(report),rows=grouped.rows
-  const countLines:Line[]=[{label:'MODIS raw (Terra + Aqua)',color:gray,values:rows.map(r=>r.raw),dash:[1.5,1]},
-    {label:'Aqua MODIS harmonized (derived estimate)',color:orange,values:rows.map(r=>r.adjusted)}]
-  if(report.report_end<aquaArchiveStart||!report.platforms.includes('aqua'))countLines.pop()
+  const countLines:Line[]=[{label:'MODIS raw (Terra + Aqua)',color:gray,values:rows.map(r=>r.raw),dash:[1.5,1]}]
+  const startPlatform=historicalCountPlatform(report.report_start)
+  const endPlatform=historicalCountPlatform(report.report_end)
+  if(report.platforms.includes(startPlatform)||report.platforms.includes(endPlatform)){
+    const label=startPlatform===endPlatform
+      ? platformLabels[startPlatform]+' harmonized (derived estimate)'
+      : 'MODIS harmonized (Terra to Aqua, derived estimate)'
+    countLines.push({label,color:orange,values:rows.map(r=>r.adjusted)})
+  }
   if(report.report_end>=viirsArchiveStart&&report.platforms.includes('snpp'))countLines.push({label:'VIIRS S-NPP (observed)',color:blue,values:rows.map(r=>r.viirs)})
   const dates=rows.map(r=>new Date((Date.parse(r.date)+Date.parse(r.end))/2).toISOString().slice(0,10))
-  // Keep partially observed launch months on or after their archive boundary.
+  // Keep the first partial VIIRS month on or after the VIIRS archive boundary.
   if(grouped.monthly)rows.forEach((r,i)=>{
-    for(const start of [aquaArchiveStart,viirsArchiveStart])if(dates[i]<start&&r.date<start&&r.end>=start)dates[i]=start
+    if(r.date<viirsArchiveStart&&r.end>=viirsArchiveStart)dates[i]=viirsArchiveStart
   })
   chart(dates,countLines,65,83,grouped.monthly?'Mean detections per day with records (monthly bins)':'Satellite detections per UTC day')
-  y=para('Harmonized Aqua MODIS = raw Aqua MODIS x '+calibration.hotspots[report.pass]+' ('+report.pass+' passes). Raw MODIS sums available Terra and Aqua records across overpasses.',192)
-  y=para(grouped.monthly?'Monthly values divide each series by its own number of days with records. Partial first/last months are retained. The availability panel and evidence JSON expose these denominators.':'Daily values are plotted without smoothing. Each gap remains a gap; isolated observed days are marked by points.',y)
-  para('Archive starts: Aqua MODIS '+aquaArchiveStart+', S-NPP VIIRS '+viirsArchiveStart+'. Missing Aqua and VIIRS observations create gaps. Sensor resolution, overpass time and record availability affect comparability.',y)
+  y=para('Harmonized MODIS = the selected platform count x '+calibration.hotspots[report.pass]+' ('+report.pass+' passes). Terra supplies dates before '+aquaArchiveStart+'. Aqua supplies dates from that day onward.',192)
+  y=para(grouped.monthly?'Monthly means use each series\' own recorded days. A month crossing the switch averages the daily estimates from both platforms in their respective date ranges. Evidence JSON includes the denominators.':'Daily values are plotted without smoothing. Each gap remains a gap; isolated observed days are marked by points.',y)
+  para('Archive starts: Aqua MODIS '+aquaArchiveStart+', S-NPP VIIRS '+viirsArchiveStart+'. Missing records from the corresponding platform leave gaps. Sensor resolution, overpass time and record availability affect comparability.',y)
 
   page('03 / Radiative power','Observed fire radiative power','Raw platform measurements are kept separate. All three panels use the same vertical scale.')
   const monthGroups=bins(report.series,grouped.monthly)
@@ -167,11 +173,11 @@ export function buildHistoricalPdf(report:HistoricalReport,areaLabel:string,font
     platformLabels[p.platform],fmt(p.detection_count,0),fmt(p.frp_sum_mw),fmt(p.valid_frp_count,0)+' / '+fmt(p.missing_frp_count,0),
   ]),y+9,[42,35,45,56])
   const selectedCounts=dailyCount(report.day,report.pass)
-  para('Selected-day harmonized Aqua MODIS estimate: '+fmt(selectedCounts.adjusted)+'. Fractional counts are expected for a model-derived estimate.',y,8.5)
+  para('Selected-day harmonized '+platformLabels[selectedCounts.adjustedPlatform]+' estimate: '+fmt(selectedCounts.adjusted)+'. Fractional counts are expected for a model-derived estimate.',y,8.5)
 
   page('06 / Sensor comparison','Matched-day count diagnostics','Descriptive agreement with VIIRS on dates where both sensors have records. This is not independent validation against ground truth.')
   const paired=pairedCounts(counts)
-  y=para('Matched observed days: '+paired.n+' of '+report.series.length+' requested days. Both estimates are compared with VIIRS on the same dates with Aqua and VIIRS records.',64)
+  y=para('Matched observed days: '+paired.n+' of '+report.series.length+' requested days. Raw and harmonized Aqua counts are compared with VIIRS on the same dates with Aqua and VIIRS records.',64)
   y=table(['Same matched days','Raw Aqua MODIS','Harmonized Aqua'],[
     ['Mean absolute difference (counts)',fmt(paired.rawAqua.mae),fmt(paired.adjusted.mae)],
     ['Signed mean difference (counts)',fmt(paired.rawAqua.meanDifference),fmt(paired.adjusted.meanDifference)],
@@ -199,21 +205,21 @@ export function buildHistoricalPdf(report:HistoricalReport,areaLabel:string,font
   const annualRows=[...annual].map(([year,days])=>{
     const cs=dailySeries({...report,series:days})
     return [year,String(days.length),fmt(sum(cs.map(d=>d.raw)),0),fmt(sum(cs.map(d=>d.adjusted))),fmt(sum(cs.map(d=>d.viirs)),0),
-      [cs.filter(d=>d.raw!==null).length,cs.filter(d=>d.aqua!==null).length,cs.filter(d=>d.viirs!==null).length].join(' / ')]
+      [cs.filter(d=>d.raw!==null).length,cs.filter(d=>d.adjusted!==null).length,cs.filter(d=>d.viirs!==null).length].join(' / ')]
   })
   for(let offset=0;offset<annualRows.length;offset+=18){
     page('Appendix / Annual totals','Detection count ledger','Observed records are summed within the selected part of each year. Harmonized counts are estimates, with no rounding before aggregation.')
-    y=table(['Year','Days','MODIS raw','Adjusted Aqua','VIIRS','Days M/A/V'],annualRows.slice(offset,offset+18),63,[18,18,36,42,32,32])
-    para('Days M/A/V counts recorded days for combined MODIS, Aqua MODIS, and VIIRS. N/A indicates missing observations. Compare totals in the context of the selected dates and record availability.',y,8.5)
+    y=table(['Year','Days','MODIS raw','Adjusted MODIS','VIIRS','Days M/H/V'],annualRows.slice(offset,offset+18),63,[18,18,36,42,32,32])
+    para('Days M/H/V counts recorded days for raw MODIS, harmonized MODIS, and VIIRS. N/A indicates missing observations. Compare totals in the context of the selected dates and record availability.',y,8.5)
   }
 
   page('Methods / Reproducibility','Methods, limits & sources','The evidence JSON contains the API payload, exact daily series, coefficients, chart bins and matched-day diagnostics.')
   y=para('1. Input and spatial selection',64,12,ink)
   y=para('Verified canonical Parquet release; exact point inclusion in the query area. Catalog boundaries are simplified. Platform/pass filters apply to every statistic. Query identity and dataset manifest SHA-256 are printed on page 1.',y)
   y=para('2. Count harmonization',y+2,12,ink)
-  y=para('K_COUNT: all = '+calibration.hotspots.all+'; day = '+calibration.hotspots.day+'; night = '+calibration.hotspots.night+'. Source: config/modis_viirs_coefficients.csv. The report applies each coefficient to Aqua counts, using the all-pass coefficient on the full daily Aqua count for that filter.',y)
+  y=para('K_COUNT: all = '+calibration.hotspots.all+'; day = '+calibration.hotspots.day+'; night = '+calibration.hotspots.night+'. Source: config/modis_viirs_coefficients.csv. Apply the selected coefficient to the daily count of Terra before '+aquaArchiveStart+' and Aqua from that date onward.',y)
   y=para('3. Missing values and comparability',y+2,12,ink)
-  y=para('No zeros are fabricated for missing records; no interpolation, extrapolation or substitution of VIIRS. MODIS totals combine available Terra and Aqua observations. Harmonized counts use Aqua MODIS observations starting on 2002-07-04. VIIRS begins on 2012-01-20. Different sensors may observe the same fire repeatedly.',y)
+  y=para('No zeros are fabricated for missing records; no interpolation, extrapolation or substitution of VIIRS. MODIS totals combine available Terra and Aqua observations. VIIRS begins on 2012-01-20. Different sensors may observe the same fire repeatedly.',y)
   y=para('4. Statistical limits',y+2,12,ink)
   y=para('FRP is measured in MW. No FRE, emissions or burned area is inferred. Coefficient uncertainty is not quantified here; no confidence band is invented. Matched-day differences measure agreement for this sample, not global accuracy. No synthetic scenario values or preset accuracy percentages enter this historical report.',y)
   y=para('5. Official source definitions',y+2,12,ink)
