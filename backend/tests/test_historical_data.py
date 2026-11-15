@@ -69,3 +69,10 @@ class HistoricalDataTest(unittest.TestCase):
         day = date(2012, 1, 21)
         rows = data.daily_records(self.release, self.select(circle), day, day)
         self.assertEqual(rows, [(day, "aqua", "day", 1, 1, 0, 25.0)])
+
+    def test_h3_second_page_starts_after_the_cursor(self):
+        first = data.cell_records(self.release, self.selection, self.day, 7, self.cursor, 1, sensor="modis")
+        second = data.cell_records(self.release, self.selection, self.day, 7, first[0][:3], 1, sensor="modis")
+        self.assertEqual(len(second), 1)
+        self.assertLess(first[0][:3], second[0][:3])
+        self.assertEqual([first[0][1], second[0][1]], ["terra", "terra"])

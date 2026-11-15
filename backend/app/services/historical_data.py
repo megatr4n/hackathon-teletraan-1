@@ -11,6 +11,7 @@ from pathlib import Path
 from threading import Lock, local
 
 import duckdb
+import h3
 import shapely
 import yaml
 from shapely.geometry import shape
@@ -268,3 +269,24 @@ def daily_records(release, selection, start, end):
             SELECT obs_date, platform, pass, {METRICS}
             FROM ({source}) GROUP BY ALL ORDER BY ALL
         """, args).fetchall()
+
+
+def cell_records(release, selection, day, resolution, cursor, limit, sensor=None):
+    with SCAN_LOCK, duckdb.connect(config=DUCKDB_OPTIONS) as db:
+        db.execute("SET enable_progress_bar = false")
+        source, args = records_sql(release, selection, day, day, db, sensor=sensor)
+        if not source:
+            return []
+        def cell_id(latitude: float, longitude: float) -> str:
+            return h3.latlng_to_cell(latitude, longitude, resolution)
+
+        db.create_function("h3_cell", cell_id)
+        return db.execute(f"""
+            WITH indexed AS (
+                SELECT h3_cell(latitude, longitude) AS cell_id, platform, pass, valid_frp
+                FROM ({source})
+            )
+            SELECT cell_id, platform, pass, {METRICS}
+            FROM indexed WHERE (cell_id, platform, pass) > (?, ?, ?)
+            GROUP BY ALL ORDER BY cell_id, platform, pass LIMIT ?
+        """, args + [*cursor, limit]).fetchall()
