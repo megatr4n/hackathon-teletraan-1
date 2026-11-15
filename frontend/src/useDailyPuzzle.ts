@@ -73,7 +73,7 @@ export function useDailyPuzzle(focusId:string, selectedDate:string|null, onMessa
   function check(){
     if(!puzzle||!progress||solved)return
     if(!selectedDate){
-      setFeedback({text:'Select a day in the calendar, then check your answer.',kind:'notice'})
+      setFeedback({text:'Open a week in the calendar, select a day, then check your answer.',kind:'notice'})
       return
     }
     if(focusId!==puzzle.focusId){

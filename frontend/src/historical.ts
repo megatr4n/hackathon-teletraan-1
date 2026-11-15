@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { MultiPolygon, Polygon } from 'geojson'
 import { areaPolygon, firstDate, lastDate, type MapCell, type Coord, type Pass } from './data'
 import { calibration, periodFrpMinimumDays } from './calibration'
 import type { Metric, Snapshot } from './pins'
 import { viirsStart } from './estimates'
+import { datesInRange } from './calendarWeeks'
 
 const configuredApi = import.meta.env.VITE_FIRMS_API
 export const historicalApi = configuredApi===undefined?undefined:import.meta.env.DEV?'':configuredApi.replace(/\/$/, '')
@@ -71,17 +72,21 @@ type CellRow = Metrics & {
 
 export const gridParams='square_km=3'
 
-export function useHistorical(enabled:boolean, request:string, date:string) {
+type MapDay = {date:string;rows:CellRow[];complete:boolean}
+
+export function useHistorical(enabled:boolean, request:string, date:string, mapFrom:string, mapTo:string) {
+  const cellCache=useRef({queryId:'',days:new Map<string,MapDay>()})
   const [query,setQuery]=useState<{key:string; days:Day[]}|null>(null)
   const [created,setCreated]=useState<{key:string; selection:Selection}|null>(null)
-  const [map,setMap]=useState<{key:string; rows:CellRow[]; complete:boolean}|null>(null)
+  const [map,setMap]=useState<{key:string; days:MapDay[]}|null>(null)
   const [activeDay,setActiveDay]=useState<{key:string; value:Day}|null>(null)
   const [error,setError]=useState<{key:string; message:string}|null>(null)
   const [attempt,retry]=useState(0)
   const key=request+'\n'+attempt
   const current=enabled&&query?.key===key?query:null
   const selection=enabled&&created?.key===key?created.selection:undefined
-  const mapKey=key+'\n'+date
+  const dayKey=key+'\n'+date
+  const mapKey=key+'\n'+mapFrom+'\n'+mapTo
   const visible=enabled&&map?.key===mapKey?map:null
   useEffect(()=>{
     if(!enabled)return
@@ -116,16 +121,16 @@ export function useHistorical(enabled:boolean, request:string, date:string) {
     const controller=new AbortController()
     void historicalFetch('/queries/'+queryId+'/days/'+date+'?include_z_score=false',{signal:controller.signal})
       .then(response=>response.json())
-      .then(value=>{if(!controller.signal.aborted)setActiveDay({key:mapKey,value})})
-      .catch(problem=>{if(!controller.signal.aborted)setError({key:mapKey,message:String(problem.message)})})
+      .then(value=>{if(!controller.signal.aborted)setActiveDay({key:dayKey,value})})
+      .catch(problem=>{if(!controller.signal.aborted)setError({key:dayKey,message:String(problem.message)})})
     return ()=>controller.abort()
-  },[queryId,date,mapKey,calendarReady])
+  },[queryId,date,dayKey,calendarReady])
   useEffect(()=>{
     if(!enabled||!queryId)return
     const controller=new AbortController()
     const signal=controller.signal
-    async function fetchCells(sensor:'modis'|'viirs-snpp') {
-      const base='/queries/'+queryId+'/days/'+date+'/cells?'+gridParams+'&limit=5000&sensor='+sensor
+    async function fetchCells(day:string,sensor:'modis'|'viirs-snpp') {
+      const base='/queries/'+queryId+'/days/'+day+'/cells?'+gridParams+'&limit=5000&sensor='+sensor
       const rows:CellRow[]=[]
       let cursor:string|null=null
       do{
@@ -136,20 +141,38 @@ export function useHistorical(enabled:boolean, request:string, date:string) {
       }while(cursor&&rows.length<20000)
       return {rows,complete:cursor===null}
     }
+    if(cellCache.current.queryId!==queryId)cellCache.current={queryId,days:new Map()}
+    const cached=cellCache.current.days
+    async function fetchDay(day:string):Promise<MapDay> {
+      const previous=cached.get(day)
+      if(previous)return previous
+      const viirs=day>=viirsStart?await fetchCells(day,'viirs-snpp'):undefined
+      const result=viirs?.rows.length?viirs:await fetchCells(day,'modis')
+      const entry={date:day,...result}
+      if(!signal.aborted){
+        cached.set(day,entry)
+        const oldest=cached.keys().next().value
+        if(cached.size>14&&oldest!==undefined)cached.delete(oldest)
+      }
+      return entry
+    }
     const run=async()=>{
-      const viirs=date>=viirsStart?await fetchCells('viirs-snpp'):undefined
-      if(signal.aborted)return
-      const result=viirs?.rows.length?viirs:await fetchCells('modis')
-      if(!signal.aborted)setMap({key:mapKey,...result})
+      const dates=datesInRange(mapFrom,mapTo)
+      const days:MapDay[]=[]
+      // Keep the concurrent load bounded even when a week needs several pages per day.
+      for(let start=0;start<dates.length&&!signal.aborted;start+=2){
+        days.push(...await Promise.all(dates.slice(start,start+2).map(fetchDay)))
+      }
+      if(!signal.aborted)setMap({key:mapKey,days})
     }
     void run().catch(problem=>{
       if(!signal.aborted)setError({key:mapKey,message:String(problem.message)})
     })
     return ()=>controller.abort()
-  },[enabled,queryId,date,mapKey])
-  return {selection, days:current?.days, day:current?.days.find(row=>row.date===date)??(activeDay?.key===mapKey?activeDay.value:undefined),
-    rows:visible?.rows, complete:visible?.complete,
-    error:error?.key===key||error?.key===mapKey?error.message:null, retry:()=>retry(value=>value+1)}
+  },[enabled,queryId,mapFrom,mapTo,mapKey])
+  return {selection, days:current?.days, day:current?.days.find(row=>row.date===date)??(activeDay?.key===dayKey?activeDay.value:undefined),
+    mapDays:visible?.days, complete:visible?.days.every(day=>day.complete),
+    error:error?.key===key||error?.key===mapKey||error?.key===dayKey?error.message:null, retry:()=>retry(value=>value+1)}
 }
 
 export const snppArchiveStart='2012-01-20'

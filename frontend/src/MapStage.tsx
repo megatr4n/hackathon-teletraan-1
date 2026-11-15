@@ -2,7 +2,6 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type
 import maplibregl, { type GeoJSONSource, type RasterTileSource, type StyleSpecification } from 'maplibre-gl'
 import { Box, Grid3X3, Layers3, Map as MapIcon, Minus, Plus, Ruler, Satellite, Target } from 'lucide-react'
 import type { FeatureCollection, Geometry } from 'geojson'
-import { calibration } from './calibration'
 import { areaPolygon, cellPolygon, contains, coord, distance, offset, type Aoi, type MapCell, type Coord, type Focus } from './data'
 import { FirePillars } from './pillars'
 import { Button, InfoTip, frpHelp } from './ui'
@@ -22,7 +21,7 @@ const KeplerMap = lazy(() => loadKepler().then(module => ({default:module.Kepler
 
 export type Tool = 'circle' | 'lasso' | null
 type Props = {
-  focus:Focus; date:string; cells:MapCell[]; harmonized:boolean; aoi:Aoi|null; tool:Tool;
+  focus:Focus; date:string; cells:MapCell[]; weekly:boolean; aoi:Aoi|null; tool:Tool;
   onArea:(area:Aoi)=>void; onCirclePreviewRadius:(radius:number|null)=>void;
   command:CameraCommand|null; onCamera:(camera:Camera)=>void;
   options:MapOptions; onOptions:(options:MapOptions)=>void;
@@ -100,7 +99,7 @@ function hazardShape(center:Coord,x:number,y:number,rx:number,ry:number,z:number
   return {type:'Feature' as const,properties:{z},geometry:{type:'Polygon' as const,coordinates:[[...ring,ring[0]]]}}
 }
 
-export function MapStage({focus,date,cells,harmonized,aoi,tool,onArea,onCirclePreviewRadius,command,onCamera,options,onOptions,
+export function MapStage({focus,date,cells,weekly,aoi,tool,onArea,onCirclePreviewRadius,command,onCamera,options,onOptions,
   countries,admins,ecoregions,areaMode,selected,onRegion,measuring,orbiting,onTourEnd,historical}:Props) {
   const holder=useRef<HTMLDivElement>(null), map=useRef<maplibregl.Map|null>(null)
   const fire=useRef<FirePillars|null>(null), places=useRef<maplibregl.Marker[]>([])
@@ -282,7 +281,7 @@ export function MapStage({focus,date,cells,harmonized,aoi,tool,onArea,onCirclePr
     set('fires',collection(cells.flatMap(cell=>{
       if(cell.raw===null)return []
       const item=cellPolygon(cell,.72)
-      return {...item,properties:{...item.properties,power:cell.raw*(harmonized?calibration.dailyFrp[cell.pass]:1)}}
+      return {...item,properties:{...item.properties,power:cell.raw}}
     })))
     set('fireCenters',collection(historical?cells.map(cell=>({type:'Feature',properties:{},
       geometry:{type:'Point',coordinates:cell.center}})):[]))
@@ -293,8 +292,8 @@ export function MapStage({focus,date,cells,harmonized,aoi,tool,onArea,onCirclePr
       [offset(focus.center,-4,0),offset(focus.center,-1.7,0)],[offset(focus.center,1.7,0),offset(focus.center,4,0)],
       [offset(focus.center,0,-4),offset(focus.center,0,-1.7)],[offset(focus.center,0,1.7),offset(focus.center,0,4)],
     ]}}]))
-    fire.current?.update(cells,harmonized)
-  },[cells,focus,harmonized,ready,aoi,selected,historical])
+    fire.current?.update(cells)
+  },[cells,focus,ready,aoi,selected,historical])
 
   useEffect(()=>{
     const instance=map.current
@@ -478,7 +477,7 @@ export function MapStage({focus,date,cells,harmonized,aoi,tool,onArea,onCirclePr
       </svg></div>}
     {tool && <div className="draw-hint"><Target size={14}/>{tool==='circle'?'Drag from the center to set the radius':'Drag to outline your area'}</div>}
     <div className="map-legend">
-      <div className="legend-title"><Layers3 size={13}/> FIRE RADIATIVE POWER <InfoTip label="Fire radiative power" help={frpHelp+' Taller pillars indicate higher FRP. The height scale compresses extremes so lower and moderate readings remain distinguishable.'}/></div>
+      <div className="legend-title"><Layers3 size={13}/> {weekly?'WEEKLY FRP SUM':'FIRE RADIATIVE POWER'} <InfoTip label="Fire radiative power" help={frpHelp+(weekly?' Pillars sum the daily FRP readings within each grid cell.':'')+' Taller pillars indicate higher FRP. The height scale compresses extremes so lower and moderate readings remain distinguishable.'}/></div>
       <div className="thermal-ramp" />
       <div className="legend-scale"><span>0</span><span>50</span><span>100</span><span>150+ MW</span></div>
       <div className="legend-z"><span/><b>Z ≥ 1.5</b><span/><b>Z ≥ 2.5</b></div>

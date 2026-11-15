@@ -32,7 +32,8 @@ export function PuzzleDropdown({game,onRegion,trigger}:{game:PuzzleState;onRegio
   useEffect(()=>{
     if(!open)return
     const outside=(event:PointerEvent)=>{
-      if(!root.current?.contains(event.target as Node))closeRef.current()
+      const target=event.target
+      if(target instanceof Element&&!root.current?.contains(target)&&!target.closest('.timeline'))closeRef.current()
     }
     const escape=(event:KeyboardEvent)=>{
       if(event.key!=='Escape'||event.defaultPrevented)return

@@ -8,7 +8,7 @@ export type CalendarView = 'grid' | 'ridge'
 export type Snapshot = {
   focus:Focus; region:Region|null; date:string; from:string; to:string; pass:Pass; harmonized:boolean;
   areaMode:AreaMode; aoi:Aoi|null; radius:number; query:string; options:MapOptions; camera:Camera;
-  metric:Metric; calendarView:CalendarView
+  metric:Metric; calendarView:CalendarView; granularity?:'day'
 }
 export type Pin = { id:string; name:string; snapshot:Snapshot }
 export const defaultOptions:MapOptions={grid:true,satellite:false,ecosystems:false}

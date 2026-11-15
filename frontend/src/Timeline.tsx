@@ -1,13 +1,14 @@
-import { CalendarDays, ChartNoAxesCombined, ChevronDown, Grid3X3, Pause, Play, SkipBack, SkipForward } from 'lucide-react'
-import { DAY, doy, firstDate, iso, lastDate, prettyDate, years, clampDate } from './data'
+import { CalendarDays, ChartNoAxesCombined, ChevronDown, Grid3X3, Pause, Play, SkipBack, SkipForward, X } from 'lucide-react'
+import { DAY, firstDate, iso, lastDate, prettyDate, clampDate } from './data'
 import { archiveDates } from './observations'
+import { calendarWeeks, summarizeWeek, weekIndex, weekRange, weeksByYear, type CalendarWeek } from './calendarWeeks'
 import { dateIndex, viirsStart, type DailyStats } from './estimates'
 import { Button, InfoTip, Segmented, frpHelp, hotspotHelp, zScoreHelp } from './ui'
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import type { CalendarView, Metric } from './pins'
 import { activityColors, calendarActivityScale, frpActivityColor, missingActivityColor, noActivityColor } from './calendarScale'
 
-const months=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC']
+const weekColumns=Array.from({length:14},(_,index)=>4*index)
 const palette=['#1b2630','#29353d','#443338','#663a35','#954832','#c86638','#ef8f4b','#ffc575']
 const observedPalette=['#1b2630','#705047','#875443','#a05e47','#b96c44','#d2804c','#ef9a57','#ffc575']
 const belowBaselinePalette=['#1b2630','#355268','#3d6581','#467b9c','#4e94b6','#60a9cc','#7abfe1','#a7d9f3']
@@ -17,13 +18,6 @@ const metricHelp={frp:frpHelp,count:hotspotHelp,z:zScoreHelp}
 const metricLabels = {frp:'FRP',count:'Hotspot Count',z:'Z-Score'}
 type HistoricalDay = { value:number|null; source:string; details?:string }
 type HistoricalCalendar = { raw:HistoricalDay[]; harmonized:HistoricalDay[] }
-const yearDays=years.map(year=>{
-  const start=dateIndex(year+'-01-01',firstDate)
-  const split=dateIndex(year+'-07-01',firstDate)
-  const end=dateIndex((year+1)+'-01-01',firstDate)
-  return {year,halves:[[start,split],[split,end]]}
-})
-
 function DateField({label,value,min,max,onChange}:{label:string;value:string;min:string;max:string;onChange:(value:string)=>void}) {
   return <label className="date-field"><span>{label}</span><div><b className="mono">{value}</b>
     <input aria-label={label+' date'} type="date" value={value} min={min} max={max}
@@ -55,39 +49,22 @@ function MetricPicker({metric,onMetric}:{metric:Metric;onMetric:(metric:Metric)=
   </div>
 }
 
-const YearRows=memo(function YearRows({year,halves,current,from,to,values,heats,metric,view,harmonized,historicalDays}:{
-  year:number;halves:number[][];current:string;from:string;to:string;values:(number|null)[];heats:number[];metric:Metric;view:CalendarView;harmonized:boolean;historicalDays?:HistoricalDay[]
-}) {
-  return <div className={'daily-year '+(current?'selected-year':'')} data-year={year}>
-    <span className="year mono">{year}{[2020,2018,2015].includes(year)&&<i/>}</span>
-    {halves.map(([start,end],half)=>{
-      const dates=archiveDates.slice(start,end)
-      const line=dates.map((_,i)=>values[start+i]===null?i+',16':i+','+(16-15*heats[start+i])).join(' ')
-      return <div className={'daily-half '+(view==='ridge'?'daily-ridge':'')} key={half}>
-        <span className="half-label mono">{half===0?'JAN–JUN':'JUL–DEC'}</span>
-        <div className="daily-cells" style={{'--days':dates.length} as CSSProperties}>
-          {view==='ridge'&&<svg viewBox={'0 0 '+(dates.length-1)+' 16'} preserveAspectRatio="none" aria-hidden="true"><polygon points={'0,16 '+line+' '+(dates.length-1)+',16'} fill="#bb75475c" stroke="#f3935b" strokeWidth=".6"/></svg>}
-          {dates.map((date,i)=>{
-            const active=date===current
-            const amount=values[start+i]
-            const label=historicalDays&&metric==='frp'?'Fire radiative power':metricLabels[metric]
-            const source=historicalDays?.[start+i].source??(date>=viirsStart?'Demo VIIRS':harmonized?'Demo harmonized MODIS':'Demo raw MODIS')
-            const details=historicalDays?.[start+i].details
-            const title=date+' · '+label+' · '+(amount===null?(details??'No observed value'):amount.toLocaleString('en-US',{maximumFractionDigits:2})+
-              (metric==='frp'?' MW':metric==='count'?' hotspots':'')+(source?' · '+source:'')+(details?' · '+details:''))
-            const colorIndex=Math.min(7,Math.floor(heats[start+i]*8))
-            const colors=historicalDays?(metric==='z'&&(amount??0)<0?belowBaselinePalette:observedPalette):palette
-            const color=metric==='z'?colors[colorIndex]:amount===null?missingActivityColor:
-              amount===0?noActivityColor:metric==='frp'?frpActivityColor(heats[start+i]):activityColors[colorIndex]
-            return <button type="button" key={date} data-date={date} disabled={date<from||date>to} tabIndex={active?0:-1}
-              aria-label={title} aria-pressed={active} title={title} className={active?'selected-cell':undefined}
-              style={view==='grid'?{backgroundColor:color}:undefined}/>
-          })}
-        </div>
-      </div>
-    })}
-  </div>
-})
+type WeekReading=ReturnType<typeof summarizeWeek>
+
+function paint(value:number|null,heat:number,metric:Metric,historical:boolean) {
+  const index=Math.min(7,Math.floor(heat*8))
+  if(metric==='z')return historical?(value!==null&&value<0?belowBaselinePalette:observedPalette)[index]:palette[index]
+  if(value===null)return missingActivityColor
+  if(value===0)return noActivityColor
+  return metric==='frp'?frpActivityColor(heat):activityColors[index]
+}
+
+function weekLabel(range:{from:string;to:string},reading:WeekReading,metric:Metric) {
+  const name=metric==='z'?'Peak daily Z-score':metric==='count'?'Hotspot sum':'FRP sum'
+  const unit=metric==='count'?' hotspots':metric==='frp'?' MW':''
+  const value=reading.value===null?'No observed value':formatBand(reading.value)+unit
+  return range.from+' – '+range.to+' · '+name+' · '+value+' · '+reading.observed+'/'+reading.days+' days with values'
+}
 
 const formatBand=(amount:number)=>amount.toLocaleString('en-US',{maximumFractionDigits:2})
 
@@ -110,18 +87,34 @@ function CalendarScaleLegend({scale,metric}:{scale:NonNullable<ReturnType<typeof
     </div>
     <span>≥ {formatBand(scale.lowerBounds[scale.lowerBounds.length-1])} {unit}</span>
     <InfoTip label="Calendar color scale" help={(metric==='frp'?'FRP uses a smooth gradient between percentile breaks. ':'Hotspot counts use discrete percentile bands. ')+
-      'Both modes share a scale computed from their positive values across this area and orbital pass. Hover a day for its value in the original units.'}/>
+      'Both modes share a scale computed from their positive values across this area and orbital pass. Hover a week for its total in the original units. Open the week to see daily values.'}/>
   </div>
 }
 
-export function Timeline({date,from,to,playing,onPlay,onSelect,series,historicalCalendar,historyReady,harmonized,onRange,metric,view,onMetric,onView}:{
-  date:string;from:string;to:string;playing:boolean;onPlay:()=>void;onSelect:(date:string,focus?:boolean)=>void;
+export function Timeline({date,daySelected,puzzleMode,from,to,playing,onPlay,onDay,onWeek,series,historicalCalendar,historyReady,harmonized,onRange,metric,view,onMetric,onView}:{
+  date:string;daySelected:boolean;puzzleMode:boolean;from:string;to:string;playing:boolean;onPlay:()=>void;onDay:(date:string)=>void;onWeek:(date:string)=>void;
   series:DailyStats[];harmonized:boolean;onRange:(from:string,to:string)=>void;metric:Metric;view:CalendarView;
   onMetric:(metric:Metric)=>void;onView:(view:CalendarView)=>void
   historicalCalendar?:HistoricalCalendar
   historyReady?:boolean
 }) {
   const panel=useRef<HTMLElement>(null)
+  const details=useRef<HTMLElement>(null)
+  const opener=useRef<HTMLButtonElement|null>(null)
+  const [openWeek,setOpenWeek]=useState<number|null>(null)
+  useEffect(()=>{
+    if(openWeek===null)return
+    const close=(event:PointerEvent)=>{
+      const target=event.target
+      if(target instanceof Element&&!details.current?.contains(target)&&!target.closest('.calendar-week'))setOpenWeek(null)
+    }
+    document.addEventListener('pointerdown',close)
+    return ()=>document.removeEventListener('pointerdown',close)
+  },[openWeek])
+  function closeWeek() {
+    setOpenWeek(null)
+    opener.current?.focus()
+  }
   const drag=useRef<{pointerId:number;y:number;overlap:number}|null>(null)
   const [overlap,setOverlap]=useState(0)
   const [limit,setLimit]=useState(0)
@@ -164,40 +157,55 @@ export function Timeline({date,from,to,playing,onPlay,onSelect,series,historical
 
   const historicalDays=historicalCalendar?.[harmonized?'harmonized':'raw']
   const historical=historicalDays!==undefined
-  const min=Date.parse(from), max=Date.parse(to), value=Date.parse(date)
-  const change=(amount:number)=>onSelect(iso(Math.min(max,Math.max(min,value+amount*DAY))),true)
+  const min=weekIndex(from),max=weekIndex(to),value=weekIndex(date)
+  const rangeFor=(week:CalendarWeek)=>weekRange(week,from,to)
+  function chooseWeek(index:number,button?:HTMLButtonElement) {
+    if(index<min||index>max)return
+    onWeek(rangeFor(calendarWeeks[index]).from)
+    if(button){
+      opener.current=button
+      setOpenWeek(index)
+    }else setOpenWeek(null)
+  }
   const activity=useMemo(()=>{
     if(metric==='z')return undefined
     const count=metric==='count'
-    const demoValues=(adjusted:boolean)=>series.map((day,index)=>archiveDates[index]>=viirsStart?
+    const demoValues=(adjusted:boolean)=>series.map((day,index)=>!puzzleMode&&archiveDates[index]>=viirsStart?
       (count?day.viirsCount:day.viirs):adjusted?(count?day.correctedCount:day.corrected):(count?day.rawCount:day.raw))
     const raw=historicalCalendar?.raw.map(day=>day.value)??demoValues(false)
     const adjusted=historicalCalendar?.harmonized.map(day=>day.value)??demoValues(true)
-    return {raw,adjusted,scale:calendarActivityScale(raw,adjusted,metric)}
-  },[series,metric,historicalCalendar])
-  const {values,heats}=useMemo(()=>{
-    if(activity){
-      const values=harmonized?activity.adjusted:activity.raw
-      return {values,heats:values.map(value=>activity.scale?.heat(value)??0)}
-    }
-    if(historicalDays){
-      const values=historicalDays.map(day=>day.value)
-      const observed=values.flatMap(value=>value===null?[]:[Math.abs(value)]).sort((a,b)=>a-b)
-      const reference=Math.max(1,observed[Math.floor((observed.length-1)*.95)]??0)
-      const ceiling=Math.log1p(reference)
-      return {values,heats:values.map(value=>value===null?0:Math.min(1,.125+.875*Math.log1p(Math.abs(value))/ceiling))}
-    }
-    const powers=series.map((day,index)=>archiveDates[index]>=viirsStart?day.viirs:harmonized?day.corrected:day.raw)
+    const totals=(values:(number|null)[])=>calendarWeeks.map(week=>summarizeWeek(
+      values.slice(dateIndex(week.from,firstDate),dateIndex(week.to,firstDate)+1),false).value)
+    return {raw,adjusted,dayScale:calendarActivityScale(raw,adjusted,metric),
+      weekScale:calendarActivityScale(totals(raw),totals(adjusted),metric)}
+  },[series,metric,historicalCalendar,puzzleMode])
+  const values=useMemo(()=>{
+    if(activity)return harmonized?activity.adjusted:activity.raw
+    if(historicalDays)return historicalDays.map(day=>day.value)
+    const powers=series.map((day,index)=>!puzzleMode&&archiveDates[index]>=viirsStart?day.viirs:harmonized?day.corrected:day.raw)
     const mean=powers.reduce((a,b)=>a+b,0)/powers.length
     const deviation=Math.sqrt(powers.reduce((sum,power)=>sum+(power-mean)**2,0)/powers.length)||1
-    const values=powers.map(power=>(power-mean)/deviation)
-    const peak=Math.max(1,...values)
-    return {values,heats:values.map(amount=>Math.max(0,amount/peak)**.7)}
-  },[series,activity,harmonized,historicalDays])
-  const observedDayCount=useMemo(()=>values.slice(dateIndex(from,firstDate),dateIndex(to,firstDate)+1)
-    .filter(value=>value!==null).length,[from,to,values])
-  const periodDays=dateIndex(to,from)+1
-  return <section ref={panel} className="timeline" aria-label="Burning activity calendar">
+    return powers.map(power=>(power-mean)/deviation)
+  },[series,activity,harmonized,historicalDays,puzzleMode])
+  const weekly=useMemo(()=>calendarWeeks.map(week=>{
+    const range=weekRange(week,from,to)
+    const readings=range.from<=range.to?values.slice(dateIndex(range.from,firstDate),dateIndex(range.to,firstDate)+1):[]
+    return summarizeWeek(readings,metric==='z')
+  }),[from,to,metric,values])
+  const zCeiling=useMemo(()=>{
+    if(metric!=='z')return 1
+    const magnitudes=values.flatMap(value=>value===null?[]:[Math.abs(value)]).sort((a,b)=>a-b)
+    return Math.log1p(Math.max(1,magnitudes[Math.floor((magnitudes.length-1)*.95)]??0))
+  },[metric,values])
+  const getHeat=(reading:number|null,week:boolean)=>{
+    if(reading===null)return 0
+    if(metric==='z')return Math.min(1,.125+.875*Math.log1p(Math.abs(reading))/zCeiling)
+    return (week?activity?.weekScale:activity?.dayScale)?.heat(reading)??0
+  }
+  const shownWeek=openWeek!==null&&openWeek>=min&&openWeek<=max?calendarWeeks[openWeek]:undefined
+  const selection=rangeFor(calendarWeeks[value])
+  return <section ref={panel} className="timeline" aria-label="Burning activity calendar"
+    onKeyDown={event=>{if(event.key==='Escape'&&shownWeek){event.preventDefault();closeWeek()}}}>
     <div className="timeline-top compact-timeline" onPointerDown={startResize} onPointerMove={resize}
       onLostPointerCapture={()=>{drag.current=null}}>
       <div className="calendar-drag-handle" role="separator" aria-label="Resize calendar" aria-orientation="horizontal"
@@ -207,21 +215,18 @@ export function Timeline({date,from,to,playing,onPlay,onSelect,series,historical
       <DateRangeFields from={from} to={to} onRange={onRange}/>
       <div className="timeline-player">
         <div className="timeline-controls">
-          <Button aria-label="Previous day" title="Previous day" onClick={()=>change(-1)}><SkipBack size={14}/></Button>
-          <Button aria-label={playing?'Pause timeline':'Play timeline'} title={playing?'Pause timeline':'Play timeline'} className="play-button" onClick={onPlay}>{playing?<Pause size={15}/>:<Play size={15}/>}</Button>
-          <Button aria-label="Next day" title="Next day" onClick={()=>change(1)}><SkipForward size={14}/></Button>
-          <input aria-label="Scrub through dates" type="range" min={min} max={max} step={DAY} value={value}
-            style={{'--progress':(max===min?0:100*(value-min)/(max-min))+'%'} as CSSProperties} onChange={event=>onSelect(iso(Number(event.target.value)))}/>
-          <span className="timeline-date mono">{prettyDate(date)} <b>DOY {String(doy(date)).padStart(3,'0')}</b></span>
+          <Button aria-label="Previous week" title="Previous week" onClick={()=>chooseWeek(value-1)}><SkipBack size={14}/></Button>
+          <Button aria-label={playing?'Pause timeline':'Play timeline'} title={playing?'Pause timeline':'Play timeline'} className="play-button" onClick={()=>{setOpenWeek(null);onPlay()}}>{playing?<Pause size={15}/>:<Play size={15}/>}</Button>
+          <Button aria-label="Next week" title="Next week" onClick={()=>chooseWeek(value+1)}><SkipForward size={14}/></Button>
+          <input aria-label="Scrub through weeks" aria-valuetext={selection.from+' – '+selection.to} type="range" min={min} max={max} step={1} value={value}
+            style={{'--progress':(max===min?0:100*(value-min)/(max-min))+'%'} as CSSProperties} onChange={event=>chooseWeek(Number(event.target.value))}/>
+          <span className="timeline-date mono">{daySelected?prettyDate(date):selection.from+' – '+selection.to}</span>
         </div>
         <div className="timeline-note">
-          {activity?.scale&&<CalendarScaleLegend scale={activity.scale} metric={metric}/>}
-          <p>{historical?
-          historyReady?<><strong>{observedDayCount.toLocaleString('en-US')} / {periodDays.toLocaleString('en-US')} days with values.</strong>{' '}
-            {metric==='z'?'Raw MODIS FRP, ±7 days in at least eight other years. Blue is below baseline.':
-              'Day tooltips show the source and value.'}</>:
-            'Loading archive values…':
-          '*harmonized FRP data for specific days may be inaccurate due to potential external factors (e.g., cloud cover).'}</p>
+          {activity?.weekScale&&<CalendarScaleLegend scale={activity.weekScale} metric={metric}/>}
+          <p>{historical&&!historyReady?'Loading archive values…':metric==='z'?
+            'Each week shows the daily Z-score farthest from zero. Blue is below baseline.':
+            'Monday–Sunday totals. Hover for coverage, or open a week to select a day.'}</p>
         </div>
       </div>
       <div className="timeline-view">
@@ -230,12 +235,56 @@ export function Timeline({date,from,to,playing,onPlay,onSelect,series,historical
         <Segmented label="Calendar view" value={view} onChange={onView} items={[{value:'grid',label:<><Grid3X3 size={13}/> Grid Matrix</>},{value:'ridge',label:<><ChartNoAxesCombined size={14}/> Ridge Waves</>}]}/>
       </div>
     </div>
-    <div className="daily-calendar" hidden={overlap===collapsedCalendar} tabIndex={0} aria-label="Daily archive, 2000 to 2025"
-      onKeyDown={event=>{if(event.key==='ArrowLeft'||event.key==='ArrowRight'){event.preventDefault();change(event.key==='ArrowLeft'?-1:1)}}}
-      onClick={event=>{const chosen=(event.target as HTMLElement).closest<HTMLButtonElement>('button[data-date]');if(chosen?.dataset.date&&!chosen.disabled)onSelect(chosen.dataset.date,true)}}>
-      <div className="daily-calendar-inner">
-        <div className="daily-months mono"><span>YEAR</span><span>HALF</span><div>{months.slice(0,6).map((month,i)=><span key={month}>{month}<small>{months[i+6]}</small></span>)}</div></div>
-        {yearDays.map(({year,halves})=><YearRows key={year} year={year} halves={halves} current={date.startsWith(String(year))?date:''} from={from} to={to} values={values} heats={heats} metric={metric} view={view} harmonized={harmonized} historicalDays={historicalDays}/>)}
+    {shownWeek&&overlap!==collapsedCalendar&&<section ref={details} className="week-details" role="dialog" aria-label="Week details">
+      <div className="week-details-header">
+        <strong>{weekLabel(rangeFor(shownWeek),weekly[shownWeek.index],metric)}</strong>
+        <Button aria-label="Close week" onClick={closeWeek}><X size={14}/></Button>
+      </div>
+      <div className="week-days">
+        {Array.from({length:7},(_,i)=>{
+          const day=iso(Date.parse(shownWeek.monday)+i*DAY)
+          const enabled=day>=from&&day<=to
+          const index=dateIndex(day,firstDate)
+          const reading=enabled?values[index]:null
+          const source=historicalDays?.[index]
+          const unit=metric==='count'?' hotspots':metric==='frp'?' MW':''
+          const title='Day '+(i+1)+' · '+day+' · '+(!enabled?'Outside selected dates':reading===null?
+            (source?.details??'No observed value'):formatBand(reading)+unit+(source?' · '+source.source:''))
+          return <div key={day} className="week-day">
+            <span>Day {i+1}</span>
+            <button type="button" data-date={day} aria-label={title} title={title} disabled={!enabled} aria-pressed={daySelected&&date===day}
+              style={{backgroundColor:paint(reading,getHeat(reading,false),metric,historical)}} onClick={()=>onDay(day)}/>
+          </div>
+        })}
+      </div>
+      {metric!=='z'&&<small>Daily colors use a separate daily scale.</small>}
+    </section>}
+    <div className="daily-calendar" hidden={overlap===collapsedCalendar} tabIndex={0} aria-label="Weekly archive, 2000 to 2025"
+      onKeyDown={event=>{
+        if(event.key!=='ArrowLeft'&&event.key!=='ArrowRight')return
+        event.preventDefault()
+        chooseWeek(value+(event.key==='ArrowLeft'?-1:1))
+      }}>
+      <div className="weekly-calendar-inner">
+        <div className="week-columns mono"><span>YEAR</span>{weekColumns.map(column=><span key={column}
+          style={{gridColumn:column+2}}>W{String(column+1).padStart(2,'0')}</span>)}</div>
+        {weeksByYear.map(({year,weeks})=><div className={'weekly-year '+(weeks.some(week=>week.index===value)?'selected-year':'')} key={year} data-year={year}>
+          <span className="year mono">{year}</span>
+          {view==='ridge'&&<svg className="weekly-ridge" viewBox="0 0 53 16" preserveAspectRatio="none" aria-hidden="true">
+            <polygon points={'0,16 '+weeks.map((week,i)=>(i+.5)+','+(16-15*getHeat(weekly[week.index].value,true))).join(' ')+' '+weeks.length+',16'}
+              fill="#bb75475c" stroke="#f3935b" strokeWidth=".35"/>
+          </svg>}
+          {weeks.map(week=>{
+            const reading=weekly[week.index]
+            const disabled=week.index<min||week.index>max
+            const title=disabled?week.from+' – '+week.to+' · Outside selected dates':weekLabel(rangeFor(week),reading,metric)
+            return <button type="button" className="calendar-week" key={week.index} data-week={week.from}
+              disabled={disabled} aria-label={title} title={title}
+              aria-pressed={value===week.index} aria-haspopup="dialog" aria-expanded={shownWeek?.index===week.index}
+              style={view==='grid'?{backgroundColor:paint(reading.value,getHeat(reading.value,true),metric,historical)}:undefined}
+              onClick={event=>chooseWeek(week.index,event.currentTarget)}/>
+          })}
+        </div>)}
       </div>
     </div>
   </section>

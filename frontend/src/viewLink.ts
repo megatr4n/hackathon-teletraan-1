@@ -2,7 +2,7 @@ import { clampDate, firstDate, iso, lastDate, maxCircleRadius, scenarios, type A
 import { countryOptions, focusForRegion, type Region } from './geography'
 import { initialSnapshot, type Snapshot } from './pins'
 
-const fields=['country','scenario','region','area','date','from','to','pass','mode','metric','view'] as const
+const fields=['country','scenario','region','area','date','from','to','pass','mode','metric','view','granularity'] as const
 
 function validDate(value:string|null, fallback:string) {
   if(!value||!/^\d{4}-\d{2}-\d{2}$/.test(value))return fallback
@@ -67,6 +67,7 @@ export function snapshotFromUrl(search=window.location.search):Snapshot {
     radius:aoi?.type==='circle'?aoi.radius:initialSnapshot.radius,query:region?.name??'',
     pass:pass==='day'||pass==='night'?pass:'all',harmonized:params.get('mode')!=='raw',
     metric:metric==='frp'||metric==='count'||metric==='z'?metric:initialSnapshot.metric,calendarView:params.get('view')==='ridge'?'ridge':'grid',
+    granularity:params.get('granularity')==='day'?'day':undefined,
     camera:{...initialSnapshot.camera,lon:center[0],lat:center[1],zoom:focus.zoom}}
 }
 
@@ -86,6 +87,7 @@ export function updateViewUrl(settings:Snapshot) {
   if(pass!=='all')params.set('pass',pass)
   if(!harmonized)params.set('mode','raw')
   if(metric!==initialSnapshot.metric)params.set('metric',metric)
+  if(settings.granularity==='day')params.set('granularity','day')
   if(calendarView!=='grid')params.set('view',calendarView)
   if(url.href!==window.location.href)window.history.replaceState(window.history.state,'',url)
 }
