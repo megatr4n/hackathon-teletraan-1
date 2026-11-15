@@ -509,6 +509,7 @@ export function MapStage({focus,date,cells,loadingCells,weekly,aoi,tool,onArea,o
       </Suspense>}
     </div>
     <div className="map-vignette" aria-hidden="true" />
+    {loadingCells&&<div className="map-observations-status" role="status">Loading fire observations…</div>}
     <StarField width={size.width} height={Math.min(112,Math.round(size.height*.22))}/>
     {(orbiting||(spaceCommand!==null&&spaceCommand===cameraToApply))&&<div className="orbital-layer" ref={spaceLayer} aria-hidden="true">
       <Suspense fallback={null}><SpaceCanvas frame={size} transferRef={transferRef} layerRef={spaceLayer} readyRef={orbitalReady}/></Suspense>

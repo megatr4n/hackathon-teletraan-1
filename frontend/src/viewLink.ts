@@ -80,7 +80,9 @@ export function updateViewUrl(settings:Snapshot) {
   else if(region?.kind==='country')params.set('country',region.id)
   else if(region)params.set('region',JSON.stringify(region))
   else if(focus.id!==initialSnapshot.focus.id&&scenarios.some(entry=>entry.id===focus.id))params.set('scenario',focus.id)
-  if(region||aoi||date!==focus.date)params.set('date',date)
+  // The first scenario's event date differs from the blank view's archive date.
+  const needsDate=date!==focus.date||(focus.id===initialSnapshot.focus.id&&date!==initialSnapshot.date)
+  if(region||aoi||needsDate)params.set('date',date)
   if(from!==firstDate)params.set('from',from)
   if(to!==lastDate)params.set('to',to)
   if(pass!=='all')params.set('pass',pass)
