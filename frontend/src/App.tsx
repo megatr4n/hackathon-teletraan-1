@@ -642,7 +642,7 @@ export function App() {
             <h4><Layers3 size={14}/> Scientific intercalibration <InfoTip label="Hotspots" help={hotspotHelp}/><InfoTip label="FRP" help={frpHelp}/></h4>
             <div className="sensor-group">Selected day · {date}</div>
             <SensorRow label="Raw MODIS hotspots" value={display(daily.rawCount)} active={!harmonized}/>
-            <SensorRow label="Harmonized MODIS hotspots" value={display(daily.correctedCount)} active={harmonized}/>
+            <SensorRow label={historical?'Harmonized MODIS hotspots (Terra → Aqua)':'Harmonized MODIS hotspots'} value={display(daily.correctedCount)} active={harmonized}/>
             {viirs&&<SensorRow label="VIIRS hotspots" value={display(daily.viirsCount)}/>}
             <SensorRow label="Raw MODIS FRP" value={display(daily.raw)} unit="MW" active={!harmonized}/>
             <SensorRow label="Harmonized MODIS FRP" value={display(daily.corrected)} unit="MW" active={harmonized}/>
@@ -651,14 +651,14 @@ export function App() {
             {historical&&<p className="sensor-note">Harmonized values are estimates using the configured coefficients.</p>}
             <div className="sensor-group period-group">Period totals <span>{period.days} {period.days===1?'DAY':'DAYS'}</span></div>
             <SensorRow label="Raw MODIS hotspots" value={display(totals.rawCount)}/>
-            <SensorRow label="Harmonized MODIS hotspots" value={display(totals.correctedCount)} active={harmonized}/>
+            <SensorRow label={historical?'Harmonized MODIS hotspots (Terra → Aqua)':'Harmonized MODIS hotspots'} value={display(totals.correctedCount)} active={harmonized}/>
             {period.viirsDays>0&&<SensorRow label="VIIRS hotspots" value={display(totals.viirsCount)}/>}
             <SensorRow label="Raw MODIS FRP sum" value={display(totals.raw)} unit={historical?'MW':'MW·day'}/>
             <SensorRow label="Harmonized MODIS FRP sum" value={display(totals.corrected)} unit={historical?'MW':'MW·day'} active={harmonized}/>
             {period.viirsDays>0&&<SensorRow label="VIIRS FRP sum" value={display(totals.viirs)} unit={historical?'MW':'MW·day'}/>}
             <div className="sensor-group period-group">Daily averages <span>{period.usePeriodCoefficient?'PERIOD FRP':'DAILY FRP'}</span></div>
             <SensorRow label="Raw MODIS hotspots" value={mean('rawCount')} unit="/day"/>
-            <SensorRow label="Harmonized MODIS hotspots" value={mean('correctedCount')} unit="/day" active={harmonized}/>
+            <SensorRow label={historical?'Harmonized MODIS hotspots (Terra → Aqua)':'Harmonized MODIS hotspots'} value={mean('correctedCount')} unit="/day" active={harmonized}/>
             {period.viirsDays>0&&<SensorRow label="VIIRS hotspots" value={mean('viirsCount')} unit="/day"/>}
             <SensorRow label="Raw MODIS FRP" value={mean('raw')} unit="MW"/>
             <SensorRow label="Harmonized MODIS FRP" value={mean('corrected')} unit="MW" active={harmonized}/>
