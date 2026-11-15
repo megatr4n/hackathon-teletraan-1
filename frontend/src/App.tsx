@@ -185,6 +185,9 @@ export function App() {
   const viirs=date>=(historical?snppArchiveStart:viirsStart)
   const actual=useHistorical(historical,historicalRequest(settings),date)
   const cells=useMemo(()=>historical?historicalCells(actual.rows??[],harmonized):demoCells,[historical,actual.rows,harmonized,demoCells])
+  const mappedDetections = useMemo(() => historical && actual.rows
+    ? cells.reduce((total, cell) => total + cell.weight, 0)
+    : null, [historical, actual.rows, cells])
 
 
   const observedDays=useMemo(()=>actual.days?.map(day=>({date:day.date,values:actualDay(day,pass)}))??[],[actual.days,pass])
@@ -616,6 +619,10 @@ export function App() {
             </>}
           </section>
           <div className="kpis">
+            {historical && <section className="wide-kpi">
+              <span>Mapped satellite detections</span>
+              <strong className="mono">{display(mappedDetections)}{actual.complete === false ? ' (partial)' : ''}</strong>
+            </section>}
             <section><span><Grid2X2 size={13}/> Active fire cells</span><strong className="mono">{historical&&!actual.rows?'—':units(cells.length,'cells')}</strong></section>
             <section title={historical?'Requires time integration of FRP':undefined}><span><Zap size={13}/> Radiative energy</span><strong className="mono">{historical?'—':units(estimates.fre,'TJ')}</strong></section>
             <section className="wide-kpi" title={historical?'Requires a validated area estimate':'FRP ÷ [0.95 × σ × (800⁴ − 300⁴)], expressed in km²'}><span><FocusIcon size={13}/> Estimated fire area</span><strong className="mono">{historical?'—':units(estimates.area,'km²')}</strong></section>
