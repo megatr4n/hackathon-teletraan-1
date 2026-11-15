@@ -13,7 +13,8 @@ import { initialSnapshot, readPins, writePins, type Camera, type Pin, type Snaps
 import { Timeline } from './Timeline'
 import { Button, InfoTip, Segmented, frpHelp, hotspotHelp, zScoreHelp } from './ui'
 import type { HistoricalReport } from './statisticalReport'
-import { historicalApi, historicalFetch, gridParams, historicalCells, historicalRequest, useHistorical, actualDay, historicalCalendarValue, scoreDetails, actualPeriod, snppArchiveStart } from './historical'
+import { historicalApi, historicalFetch, gridParams, historicalArea, historicalCells, historicalRequest, useHistorical, useHistoricalMap, actualDay, historicalCalendarValue, scoreDetails, actualPeriod, snppArchiveStart } from './historical'
+import { useFireZones } from './fireZones'
 import { snapshotFromUrl, updateViewUrl } from './viewLink'
 
 import { cinematicTrack, tourRegions, type CameraCommand, type CameraDestination } from './cameraTour'
@@ -115,6 +116,7 @@ export function App() {
   const [circlePreviewRadius,setCirclePreviewRadius]=useState<number|null>(null)
   const [dialog,setDialog]=useState(false)
   const [playing,setPlaying]=useState(false)
+  const [showFireZones,setShowFireZones]=useState(false)
   const [message,setMessage]=useState('')
   const [exportingReport,setExportingReport]=useState(false)
   const [measuring,setMeasuring]=useState(false)
@@ -195,7 +197,13 @@ export function App() {
   const activeWeek=weekRange(calendarWeeks[weekIndex(date)],from,to)
   const mapFrom=hasSelectedDay?date:activeWeek.from
   const mapTo=hasSelectedDay?date:activeWeek.to
-  const actual=useHistorical(historical,historicalRequest(settings),date,mapFrom,mapTo)
+  const zonesRequested=historical&&showFireZones&&!orbiting
+  const archive=useHistorical(historical,historicalRequest(settings),date)
+  const fireZones=useFireZones(zonesRequested&&(archive.selection||archive.error)
+    ?JSON.stringify({area:historicalArea(settings)}):undefined,archive.selection?.dataset_manifest_sha256)
+  const zonesActive=zonesRequested&&Boolean(fireZones.data?.features.length)
+  const mapObservations=useHistoricalMap(historical&&!zonesActive,archive.selection?.query_id,archive.key,mapFrom,mapTo)
+  const actual={...archive,...mapObservations,error:archive.error??mapObservations.error}
   const cells=useMemo(()=>{
     if(historical)return sumMapCells(actual.mapDays?.map(day=>historicalCells(day.rows,day.date,harmonized))??[])
     return sumMapCells(datesInRange(mapFrom,mapTo).map(day=>source.cellsForDay(day)
@@ -292,10 +300,10 @@ export function App() {
 
   useEffect(()=>{
     if(!playing)return
-    if(historical&&!actual.mapDays)return
+    if(historical&&!(zonesActive?actual.days:actual.mapDays))return
     const timer=window.setTimeout(()=>setSettings(current=>({...current,date:nextWeekDate(current.date,current.from,current.to)})),460)
     return ()=>clearTimeout(timer)
-  },[playing,from,to,date,historical,actual.mapDays])
+  },[playing,from,to,date,historical,actual.days,actual.mapDays,zonesActive])
   useEffect(()=>{
     if(!message)return
     const timer=window.setTimeout(()=>setMessage(''),3200)
@@ -570,7 +578,10 @@ export function App() {
         {filtersOpen?<ChevronLeft size={18}/>:<ChevronRight size={18}/>}
       </Button>
 
-      <MapStage focus={focus} date={date} cells={mapCells} loadingCells={historical&&!actual.mapDays&&!actual.error} playing={playing} historical={historical} weekly={!hasSelectedDay} aoi={aoi} tool={tool} onArea={updateArea} onCirclePreviewRadius={setCirclePreviewRadius}
+      <MapStage focus={focus} date={date} cells={mapCells} loadingCells={historical&&!zonesActive&&!actual.mapDays&&!actual.error} playing={playing} historical={historical} weekly={!hasSelectedDay}
+        zonesActive={zonesActive} zonesRequested={zonesRequested} fireZones={fireZones}
+        onToggleFireZones={()=>setShowFireZones(value=>!value)}
+        aoi={aoi} tool={tool} onArea={updateArea} onCirclePreviewRadius={setCirclePreviewRadius}
         command={command} onCamera={value=>{camera.current=value}} options={options} onOptions={next=>setSettings(current=>({...current,options:next}))}
         countries={countries} admins={admins} ecoregions={ecoregions} areaMode={areaMode} selected={selected} onRegion={selectMapRegion}
         measuring={measuring} orbiting={orbiting} onTourEnd={()=>showTourStop(tourStop)}/>

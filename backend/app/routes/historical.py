@@ -10,7 +10,7 @@ import json
 import logging
 import re
 import shapely
-from app.services import climatology
+from app.services import climatology, fire_zones
 from app.services import historical_data as data
 from app.services import historical_queries as queries
 from dataclasses import dataclass
@@ -76,8 +76,11 @@ class CatalogArea(Input):
     parent_id: Annotated[str | None, Field(max_length=3)] = None
 
 
-class SelectionRequest(Input):
+class AreaRequest(Input):
     area: Annotated[Circle | Geometry | CatalogArea, Field(discriminator="kind")]
+
+
+class SelectionRequest(AreaRequest):
     start: date = Field(alias="from")
     end: date = Field(alias="to")
     orbit_pass: Literal["all", "day", "night"] = Field("all", alias="pass")
@@ -206,6 +209,16 @@ class Selection:
     expires: datetime
     identifier: str
 
+    # The identifier already includes the release, geometry version and normalized
+    # request. Renewing the query expiration should not invalidate its aggregates.
+    def __hash__(self):
+        return hash(self.identifier)
+
+    def __eq__(self, other):
+        if not isinstance(other, Selection):
+            return NotImplemented
+        return self.identifier == other.identifier
+
     def metadata(self):
         return {
             "query_id": self.identifier, "dataset_release": self.release.id,
@@ -237,6 +250,17 @@ def read_data(operation, *args):
     except duckdb.Error as error:
         log.exception("Historical query could not read the verified release")
         raise failure(503, "query_failed", "The historical query could not be completed") from error
+
+
+@router.post("/fire-zones")
+def historical_fire_zones(request: AreaRequest):
+    release = get_release()
+    try:
+        return read_data(fire_zones.zones_for, release, request.area)
+    except LookupError as error:
+        raise failure(404, "unknown_territory", str(error)) from error
+    except (ValueError, TypeError, KeyError, IndexError, GEOSException) as error:
+        raise failure(422, "invalid_geometry", str(error)) from error
 
 
 @router.get("/datasets/active")

@@ -189,6 +189,13 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 .map-status { display:flex; align-items:center; gap:6px; top:16px; right:16px; color:#a5c9b7; border:1px solid #3a5752; padding:6px 7px; background:#152623f0; font:9px var(--mono); border-radius:4px; pointer-events:none }
 .live-dot { width:6px; height:6px; flex:none; display:inline-block; border-radius:50%; background:#60d9a2; box-shadow:0 0 6px #60d9a255 }
 .map-legend { bottom:54px; left:15px; width:175px; background:#121a25f5; border:1px solid #43505d; border-radius:5px; padding:8px 9px; pointer-events:none }
+.fire-zone-legend { width:218px; pointer-events:auto; color:#c0ccd9; font-size:11px }
+.fire-zone-legend p { margin:6px 0 0 }
+.fire-zone-legend ul { list-style:none; margin:7px 0; padding:0; display:grid; gap:4px }
+.fire-zone-legend li { display:flex; align-items:center; gap:7px }
+.fire-zone-legend i { width:9px; height:9px; border-radius:2px }
+.fire-zone-popup { pointer-events:none }
+.fire-zone-popup .maplibregl-popup-content { background:#121a25; color:#e7edf4; padding:7px 10px; }
 .legend-title { display:flex; gap:6px; align-items:center; font:9px var(--mono); color:#d6dee7; letter-spacing:.02em; white-space:nowrap }
 .legend-title svg { color:#ed9468 }
 .thermal-ramp { height:6px; border-radius:2px; margin:7px 0 4px; background:linear-gradient(90deg,#7b242b,#b8442b,#ec6b36,#ffae56,#ffe0a0) }
