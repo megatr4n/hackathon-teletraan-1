@@ -545,7 +545,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 .analytics-scroll .analysis-row small { font-size:9.5px }
 .sensor-group { padding:6px 9px; font-size:10px; display:flex; justify-content:space-between; align-items:center; gap:5px }
 .sensor-group>span { color:#8296ab; font-size:8px; white-space:nowrap }
-.sensor-group.period-group { margin-top:7px; border-top:1px solid #344050 }
 .sensor-note { padding:7px 9px; color:#9aaabd; font-size:10px }
 .historical-row { font-size:11.5px; padding-block:6px }
 .kpis section>span { font-size:10.5px }
@@ -617,8 +616,59 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 .orbital-filters .pass-coefficients { display:grid; gap:5px; font-size:clamp(8.667px,.7333vw,10.667px); line-height:1.25; margin-top:9px }
 .pass-coefficients>div { white-space:nowrap }
 .period-coefficient { font-size:inherit; margin-top:0 }
-.calibration .sensor-group { position:relative; padding-left:23px }
-.calibration .sensor-group::before { content:""; display:block; position:absolute; width:8px; height:8px; left:9px; top:50%; transform:translateY(-50%); border:1px solid #ed9d75; border-radius:50% }
+.analytics-scroll .analysis-heading {
+  padding:10px 11px;
+  border:1px solid #684836;
+  border-inline-start:3px solid #e39671;
+  border-radius:6px;
+  background:linear-gradient(115deg,#2b211f,#191e29 78%);
+}
+.analysis-heading .analysis-area { color:#e6ad92 }
+.analysis-heading .analysis-date { flex-wrap:wrap; white-space:normal }
+.calibration { padding:0 7px 7px }
+.calibration>h4 { margin:0 -7px 7px; color:#ebc1a7; background:#25232a }
+.calibration>h4>svg { color:#efab86 }
+.calibration-group {
+  --group-accent:#98a9c1;
+  --group-header:#202938;
+  overflow:hidden;
+  border:1px solid #354152;
+  border-radius:5px;
+  background:#131a25;
+}
+.calibration-group + .calibration-group { margin-top:7px }
+.calibration-group.selected-stats {
+  --group-accent:#f7ba95;
+  --group-header:#332620;
+  border-color:#684836;
+}
+.calibration-group.average-stats { --group-accent:#9dc9e2; --group-header:#1c2a3a }
+.calibration-group.activity-stats { --group-accent:#a7d4c7; --group-header:#1d2d31 }
+.calibration-group .sensor-group {
+  min-height:29px;
+  border-inline-start:2px solid var(--group-accent);
+  border-bottom:1px solid #354152;
+  color:var(--group-accent);
+  background:var(--group-header);
+}
+.calibration-group .analysis-row { margin-inline:7px }
+.calibration-group .analysis-row:last-child { border-bottom:0 }
+.calibration-group .analysis-row>span { min-width:0; overflow-wrap:break-word }
+.calibration-group .analysis-row strong { text-align:right; white-space:normal }
+.historical h4 { color:#b9cde6; background:#202c3d }
+.historical h4>svg { color:#a3bde0 }
+.historical .historical-row strong { color:#bed5ee }
+.map-metrics h4 { color:#add8cd; background:#203034 }
+.map-metrics h4>svg { color:#9ccabd }
+.analytics-scroll .map-metrics .kpis {
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  padding:7px;
+}
+.analytics-scroll .map-metrics .wide-kpi { grid-column:1/-1 }
+.map-metrics .kpis section { background:#1c2633 }
+.map-metrics .kpis section>span { flex-wrap:wrap; white-space:normal }
+.analytics .export-buttons { padding-top:9px; border-top-color:#465568 }
+.analytics .export-buttons .button { min-height:36px; height:auto; text-align:left }
 .timeline-top.compact-timeline { display:grid; grid-template-columns:max-content minmax(204px,236px) max-content minmax(220px,1fr) auto;
   grid-template-areas:"title dates calibration player view"; min-height:48px; gap:8px 12px; padding:8px 13px; align-items:center }
 .compact-timeline .timeline-title { grid-area:title }
