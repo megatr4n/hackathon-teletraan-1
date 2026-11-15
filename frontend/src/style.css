@@ -548,7 +548,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 .compact-timeline .date-field b { font-size:9px }
 .compact-timeline .timeline-controls { justify-content:flex-start }
 .compact-timeline .timeline-controls input { max-width:none }
-.compact-timeline .timeline-note { font-size:7.8px; line-height:1.35; opacity:.60; text-wrap:balance }
+.compact-timeline .timeline-note { font-size:7.8px; line-height:1.35; text-wrap:balance }
+.compact-timeline .timeline-note>p { opacity:.60 }
 .daily-calendar { overflow:auto; max-height:144px; scrollbar-width:thin; scrollbar-color:#46586c #141b26; padding:0 13px 6px; --day:6px; --day-gap:1px; --year:36px; --half:44px }
 .daily-calendar-inner { width:max-content; min-width:100% }
 .daily-months,.daily-year { display:grid; grid-template-columns:var(--year) var(--half) minmax(0,1fr); column-gap:5px }
@@ -787,3 +788,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 .help-tooltip { position:fixed; z-index:100; width:min(240px,calc(100vw - 16px)); padding:8px 10px; pointer-events:none;
   border:1px solid #455267; border-radius:5px; background:#151e2a; color:#e5eaf0; box-shadow:0 5px 16px #0008;
   font:12px/1.4 "Inter Variable",Inter,sans-serif; text-transform:none; letter-spacing:normal }
+
+.calendar-scale { display:flex; flex-wrap:wrap; align-items:center; gap:2px 5px; margin-bottom:3px; color:#bac7d4; font:9px var(--mono) }
+.calendar-scale-key,.calendar-scale-ramp { display:inline-flex; align-items:center; gap:2px }
+.calendar-scale i { width:8px; height:8px; border-radius:1px; display:block }
+.calendar-scale .info-tip { width:15px; height:15px }
+.calendar-scale .info-tip svg { width:11px; height:11px }

@@ -5,6 +5,7 @@ import { dateIndex, viirsStart, type DailyStats } from './estimates'
 import { Button, InfoTip, Segmented, frpHelp, hotspotHelp, zScoreHelp } from './ui'
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import type { CalendarView, Metric } from './pins'
+import { activityColors, calendarActivityScale, missingActivityColor, noActivityColor } from './calendarScale'
 
 const months=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC']
 const palette=['#1b2630','#29353d','#443338','#663a35','#954832','#c86638','#ef8f4b','#ffc575']
@@ -15,6 +16,7 @@ const collapsedCalendar=-restingCalendarHeight
 const metricHelp={frp:frpHelp,count:hotspotHelp,z:zScoreHelp}
 const metricLabels = {frp:'FRP',count:'Hotspot Count',z:'Z-Score'}
 type HistoricalDay = { value:number|null; source:string; details?:string }
+type HistoricalCalendar = { raw:HistoricalDay[]; harmonized:HistoricalDay[] }
 const yearDays=years.map(year=>{
   const start=dateIndex(year+'-01-01',firstDate)
   const split=dateIndex(year+'-07-01',firstDate)
@@ -75,9 +77,11 @@ const YearRows=memo(function YearRows({year,halves,current,from,to,values,heats,
               (metric==='frp'?' MW':metric==='count'?' hotspots':'')+(source?' · '+source:'')+(details?' · '+details:''))
             const colorIndex=Math.min(7,Math.floor(heats[start+i]*8))
             const colors=historicalDays?(metric==='z'&&(amount??0)<0?belowBaselinePalette:observedPalette):palette
+            const color=metric==='z'?colors[colorIndex]:amount===null?missingActivityColor:
+              amount===0?noActivityColor:activityColors[colorIndex]
             return <button type="button" key={date} data-date={date} disabled={date<from||date>to} tabIndex={active?0:-1}
               aria-label={title} aria-pressed={active} title={title} className={active?'selected-cell':undefined}
-              style={view==='grid'?{backgroundColor:colors[colorIndex]}:undefined}/>
+              style={view==='grid'?{backgroundColor:color}:undefined}/>
           })}
         </div>
       </div>
@@ -85,11 +89,32 @@ const YearRows=memo(function YearRows({year,halves,current,from,to,values,heats,
   </div>
 })
 
-export function Timeline({date,from,to,playing,onPlay,onSelect,series,historicalDays,historyReady,harmonized,onRange,metric,view,onMetric,onView}:{
+const formatBand=(amount:number)=>amount.toLocaleString('en-US',{maximumFractionDigits:2})
+
+function CalendarScaleLegend({scale,metric}:{scale:NonNullable<ReturnType<typeof calendarActivityScale>>;metric:Metric}) {
+  const unit=metric==='count'?'hotspots':'MW'
+  return <div className="calendar-scale" role="group" aria-label={'Shared calendar color scale in '+unit}>
+    <span className="calendar-scale-key" title="No observation"><i style={{background:missingActivityColor}}/>∅</span>
+    <span className="calendar-scale-key" title="Observed zero"><i style={{background:noActivityColor}}/>0</span>
+    <div className="calendar-scale-ramp">
+      {scale.lowerBounds.map((lower,index)=>{
+        const upper=scale.lowerBounds[index+1]
+        if(upper===lower)return null
+        const label=upper===undefined?'≥ '+formatBand(lower):lower===0?'> 0 and < '+formatBand(upper):
+          formatBand(lower)+' to < '+formatBand(upper)
+        return <i key={index} style={{background:activityColors[index]}} title={label+' '+unit}/>
+      })}
+    </div>
+    <span>≥ {formatBand(scale.lowerBounds[scale.lowerBounds.length-1])} {unit}</span>
+    <InfoTip label="Calendar color scale" help="Raw Satellite and Harmonized share percentile bands computed from both modes’ positive values across this area and orbital pass. Brighter colors indicate more hotspots or higher FRP. Hover a day for its value in the original units."/>
+  </div>
+}
+
+export function Timeline({date,from,to,playing,onPlay,onSelect,series,historicalCalendar,historyReady,harmonized,onRange,metric,view,onMetric,onView}:{
   date:string;from:string;to:string;playing:boolean;onPlay:()=>void;onSelect:(date:string,focus?:boolean)=>void;
   series:DailyStats[];harmonized:boolean;onRange:(from:string,to:string)=>void;metric:Metric;view:CalendarView;
   onMetric:(metric:Metric)=>void;onView:(view:CalendarView)=>void
-  historicalDays?:HistoricalDay[]
+  historicalCalendar?:HistoricalCalendar
   historyReady?:boolean
 }) {
   const panel=useRef<HTMLElement>(null)
@@ -133,10 +158,24 @@ export function Timeline({date,from,to,playing,onPlay,onSelect,series,historical
       Math.min(limit,Math.max(collapsedCalendar,current+(event.key==='ArrowUp'?24:-24))))
   }
 
+  const historicalDays=historicalCalendar?.[harmonized?'harmonized':'raw']
   const historical=historicalDays!==undefined
   const min=Date.parse(from), max=Date.parse(to), value=Date.parse(date)
   const change=(amount:number)=>onSelect(iso(Math.min(max,Math.max(min,value+amount*DAY))),true)
+  const activity=useMemo(()=>{
+    if(metric==='z')return undefined
+    const count=metric==='count'
+    const demoValues=(adjusted:boolean)=>series.map((day,index)=>archiveDates[index]>=viirsStart?
+      (count?day.viirsCount:day.viirs):adjusted?(count?day.correctedCount:day.corrected):(count?day.rawCount:day.raw))
+    const raw=historicalCalendar?.raw.map(day=>day.value)??demoValues(false)
+    const adjusted=historicalCalendar?.harmonized.map(day=>day.value)??demoValues(true)
+    return {raw,adjusted,scale:calendarActivityScale(raw,adjusted)}
+  },[series,metric,historicalCalendar])
   const {values,heats}=useMemo(()=>{
+    if(activity){
+      const values=harmonized?activity.adjusted:activity.raw
+      return {values,heats:values.map(value=>activity.scale?.heat(value)??0)}
+    }
     if(historicalDays){
       const values=historicalDays.map(day=>day.value)
       const observed=values.flatMap(value=>value===null?[]:[Math.abs(value)]).sort((a,b)=>a-b)
@@ -147,10 +186,10 @@ export function Timeline({date,from,to,playing,onPlay,onSelect,series,historical
     const powers=series.map((day,index)=>archiveDates[index]>=viirsStart?day.viirs:harmonized?day.corrected:day.raw)
     const mean=powers.reduce((a,b)=>a+b,0)/powers.length
     const deviation=Math.sqrt(powers.reduce((sum,power)=>sum+(power-mean)**2,0)/powers.length)||1
-    const values=metric==='frp'?powers:metric==='count'?series.map((day,index)=>archiveDates[index]>=viirsStart?day.viirsCount:harmonized?day.correctedCount:day.rawCount):powers.map(power=>(power-mean)/deviation)
+    const values=powers.map(power=>(power-mean)/deviation)
     const peak=Math.max(1,...values)
     return {values,heats:values.map(amount=>Math.max(0,amount/peak)**.7)}
-  },[series,metric,harmonized,historicalDays])
+  },[series,activity,harmonized,historicalDays])
   const observedDayCount=useMemo(()=>values.slice(dateIndex(from,firstDate),dateIndex(to,firstDate)+1)
     .filter(value=>value!==null).length,[from,to,values])
   const periodDays=dateIndex(to,from)+1
@@ -171,12 +210,15 @@ export function Timeline({date,from,to,playing,onPlay,onSelect,series,historical
             style={{'--progress':(max===min?0:100*(value-min)/(max-min))+'%'} as CSSProperties} onChange={event=>onSelect(iso(Number(event.target.value)))}/>
           <span className="timeline-date mono">{prettyDate(date)} <b>DOY {String(doy(date)).padStart(3,'0')}</b></span>
         </div>
-        <p className="timeline-note">{historical?
+        <div className="timeline-note">
+          {activity?.scale&&<CalendarScaleLegend scale={activity.scale} metric={metric}/>}
+          <p>{historical?
           historyReady?<><strong>{observedDayCount.toLocaleString('en-US')} / {periodDays.toLocaleString('en-US')} days with values.</strong>{' '}
             {metric==='z'?'Raw MODIS FRP, ±7 days in at least eight other years. Blue is below baseline.':
-              'Gray means no value. Day tooltips show the source and value.'}</>:
+              'Day tooltips show the source and value.'}</>:
             'Loading archive values…':
           '*harmonized FRP data for specific days may be inaccurate due to potential external factors (e.g., cloud cover).'}</p>
+        </div>
       </div>
       <div className="timeline-view">
         <MetricPicker metric={metric} onMetric={onMetric}/>

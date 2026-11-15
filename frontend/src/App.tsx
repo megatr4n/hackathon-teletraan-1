@@ -230,19 +230,24 @@ export function App() {
       .reduce<string|undefined>((nearest,day)=>
         !nearest||Math.abs(Date.parse(day.date)-selected)<Math.abs(Date.parse(nearest)-selected)?day.date:nearest,undefined)
   },[actual.rows,date,from,historical,observedDays,to])
+  const calendarDayWhileLoading=actual.days?undefined:actual.day
   const historicalCalendar=useMemo(()=>{
     if(!historical)return undefined
-    const byDate=new Map(observedDays.map(day=>[day.date,day.values]))
-    const scores=metric==='z'?new Map(actual.days?.map(day=>[day.date,day])):undefined
-    if(actual.day&&!byDate.has(actual.day.date))byDate.set(actual.day.date,actualDay(actual.day,pass))
-    return archiveDates.map(day=>{
-      if(metric==='z'){
-        const row=scores?.get(day)
+    if(metric==='z'){
+      const scores=new Map(actual.days?.map(day=>[day.date,day]))
+      const days=archiveDates.map(day=>{
+        const row=scores.get(day)
         return {value:row?.z_score??null,source:'MODIS',details:scoreDetails(row)}
-      }
-      return historicalCalendarValue(day,byDate.get(day),metric,harmonized)
-    })
-  },[actual.day,actual.days,observedDays,historical,harmonized,metric,pass])
+      })
+      return {raw:days,harmonized:days}
+    }
+    const byDate=new Map(observedDays.map(day=>[day.date,day.values]))
+    if(calendarDayWhileLoading)byDate.set(calendarDayWhileLoading.date,actualDay(calendarDayWhileLoading,pass))
+    return {
+      raw:archiveDates.map(day=>historicalCalendarValue(day,byDate.get(day),metric,false)),
+      harmonized:archiveDates.map(day=>historicalCalendarValue(day,byDate.get(day),metric,true)),
+    }
+  },[calendarDayWhileLoading,actual.days,observedDays,historical,metric,pass])
 
 
   useEffect(()=>{
@@ -633,7 +638,7 @@ export function App() {
     </div>
 
     <Timeline date={date} from={from} to={to} playing={playing} onPlay={()=>{stopTour(false);setHasSelectedDay(true);setPlaying(value=>!value)}}
-      onSelect={selectDate} series={series} historicalDays={historicalCalendar} historyReady={Boolean(actual.days)} harmonized={harmonized} onRange={range} metric={metric} view={calendarView}
+      onSelect={selectDate} series={series} historicalCalendar={historicalCalendar} historyReady={Boolean(actual.days)} harmonized={harmonized} onRange={range} metric={metric} view={calendarView}
       onMetric={value=>setSettings(current=>({...current,metric:value}))} onView={value=>setSettings(current=>({...current,calendarView:value}))}/>
     </div>
     <footer className="footer mono"><span><span className="live-dot"/> {historical?'HISTORICAL TELEMETRY':'DEMO TELEMETRY'} <i/> KEPLER.GL</span><span><TriangleAlert size={12}/> {historical?'NASA FIRMS OBSERVATIONS':'SYNTHETIC FIRE OBSERVATIONS'}</span></footer>
