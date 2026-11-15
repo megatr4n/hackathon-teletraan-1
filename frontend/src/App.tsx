@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react'
+import { startTransition, useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
 import { Activity, ArrowDown, ArrowDownToLine, ArrowUpRight, Bookmark, BookmarkPlus, Camera as CameraIcon, Circle, ChevronLeft, ChevronRight, Clock3, CodeXml, Crosshair, Database, FileText, Focus as FocusIcon, Grid2X2, Info, Layers3, Lasso, Leaf, MapPin, Puzzle as PuzzleIcon, Ruler, Search, SlidersHorizontal, Satellite, TriangleAlert, X, Zap } from 'lucide-react'
 import { areaPolygon, cellPolygon, clampDate, DAY, doy, firstDate, iso, maxCircleRadius, number, prettyDate, territories, type Aoi, type Cell, type Coord } from './data'
@@ -253,13 +253,21 @@ export function App() {
     return ()=>clearTimeout(timer)
   },[message])
 
-  function chooseRegion(next:Region,point?:Coord) {
+  function chooseRegion(next:Region,point?:Coord,globe=false) {
     stopTour(false)
     const nextFocus=focusForRegion(next,date,point)
     const nextMode=next.kind==='eco'?'ecoregions':'countries'
-    setSettings(current=>({...current,focus:nextFocus,region:next,areaMode:nextMode,aoi:null,query:next.name}))
     setTool(null);setOrbiting(false);setPlaying(false)
-    setCommand({camera:{lon:nextFocus.center[0],lat:nextFocus.center[1],zoom:nextFocus.zoom},duration:880})
+    const target={lon:nextFocus.center[0],lat:nextFocus.center[1],zoom:nextFocus.zoom}
+    const animate=globe&&!window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    const applyRegion=()=>setSettings(current=>({...current,focus:nextFocus,region:next,areaMode:nextMode,aoi:null,query:next.name}))
+    if(animate){
+      setCommand({globe:target,startedAt:performance.now()})
+      startTransition(applyRegion)
+    }else{
+      applyRegion()
+      setCommand({camera:target,duration:globe?0:880})
+    }
   }
   function goToPuzzleRegion(puzzle:Puzzle) {
     const next=puzzleFocus(puzzle)
@@ -441,7 +449,7 @@ export function App() {
           <h3><FocusIcon size={14}/>Area of interest <InfoTip label="Area of interest" help="Choose the country, administrative region, ecoregion, or custom area used to filter observations."/></h3>
           <Segmented label="Area of interest" value={areaMode} onChange={changeAreaMode} className="area-mode"
             items={[{value:'countries',label:'Countries'},{value:'ecoregions',label:'Eco-regions'},{value:'custom',label:'Custom Area'}]}/>
-          <RegionSearch key={areaMode} query={query} mode={areaMode} options={displayOptions} onQuery={value=>setSettings(current=>({...current,query:value}))} onChoose={chooseRegion}/>
+          <RegionSearch key={areaMode} query={query} mode={areaMode} options={displayOptions} onQuery={value=>setSettings(current=>({...current,query:value}))} onChoose={next=>chooseRegion(next,undefined,true)}/>
           {areaMode!=='custom'?<>
             <div className="focus-card"><MapPin size={17}/><div><strong>{focus.name}</strong><span>{focus.area}</span></div><Crosshair size={14} className="focus-cross"/></div>
             {areaMode==='countries'&&region?.country&&admins.features.length>0&&<label className="admin-field">
@@ -450,8 +458,8 @@ export function App() {
                   const id=event.target.value
                   const match=id?admins.features.find(feature=>feature.properties.id===id):undefined
                   const country=countryList.find(entry=>entry.kind==='country'&&entry.id===region.country)
-                  if(match)chooseRegion(match.properties)
-                  else if(!id&&country)chooseRegion(country)
+                  if(match)chooseRegion(match.properties,undefined,true)
+                  else if(!id&&country)chooseRegion(country,undefined,true)
                 }}>
                 <option value="">Whole country</option>
                 {[...admins.features].sort((a,b)=>a.properties.name.localeCompare(b.properties.name)).map(feature=><option key={feature.properties.id} value={feature.properties.id}>{feature.properties.name}</option>)}

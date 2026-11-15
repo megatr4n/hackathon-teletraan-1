@@ -8,7 +8,7 @@ type FlightPose = { position:Coord; altitude:number; pitch:number; bearing:numbe
 type Flight = { duration:number; at:(progress:number)=>FlightPose }
 type SpaceLeg = { moon?:boolean }
 export type CameraTrack = { flight:Flight; transfer?:SpaceLeg } | { shots:Shot[]; arrival:Camera; transfer:SpaceLeg }
-export type CameraCommand = { camera:Partial<Camera>; duration:number } | { track:CameraTrack }
+export type CameraCommand = { camera:Partial<Camera>; duration:number } | { track:CameraTrack } | { globe:Pick<Camera,'lon'|'lat'|'zoom'>; startedAt:number }
 
 const easing:Record<Easing,(t:number)=>number>={
   linear:t=>t,

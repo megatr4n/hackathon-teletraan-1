@@ -114,6 +114,7 @@ export function MapStage({focus,date,cells,harmonized,aoi,tool,onArea,onCirclePr
   const circleDrag=useRef<{pointerId:number;center:Coord;start:[number,number];preview:GeoJSONSource}|null>(null)
   const [circleLine,setCircleLine]=useState<[Coord,Coord]|null>(null)
   const ruler=useRef<Coord|null>(null)
+  const [regionFlying,setRegionFlying]=useState(false)
   const [cameraToApply,setCameraToApply]=useState<CameraCommand|null>(null)
   const animation=useRef<number>(0)
   const spaceLayer=useRef<HTMLDivElement>(null)
@@ -175,9 +176,11 @@ export function MapStage({focus,date,cells,harmonized,aoi,tool,onArea,onCirclePr
     const instance=map.current
     if(!cameraToApply||!ready||!instance) return
     const request=cameraToApply
+    const globe='globe' in request?request.globe:null
     const track='track' in request?request.track:null
     if(track&&!orbiting)return
     let active=true
+    setRegionFlying(globe!==null)
     void loadKepler().then(({setKeplerCamera})=>{
       if(!active)return
       let last=(orbiting?commandedCamera.current:null)??previous.current
@@ -193,11 +196,11 @@ export function MapStage({focus,date,cells,harmonized,aoi,tool,onArea,onCirclePr
         const center=maplibregl.LngLat.convert(options.center!).wrap()
         return {lat:center.lat,lon:center.lng,zoom:options.zoom??last.zoom,bearing,pitch}
       }
-      const transfer=track?.transfer
-      const arrival=basedOnFlight?toMapCamera(basedOnFlight.at(0)):track&&'arrival' in track?track.arrival:null
+      const transfer=globe?{moon:false}:track?.transfer
+      const arrival=globe?{...last,...globe}:basedOnFlight?toMapCamera(basedOnFlight.at(0)):track&&'arrival' in track?track.arrival:null
       const shots=track&&'shots' in track?track.shots:'camera' in request?[{to:{...last,...request.camera},ms:request.duration}]:[]
-      const startTime=performance.now()
-      const transferTime=transfer?transferDuration:0
+      const startTime='globe' in request?request.startedAt:performance.now()
+      const transferTime=globe?3500:transfer?transferDuration:0
       const lowZoom=transfer?toMapCamera({
         position:[last.lon,last.lat],altitude:3600,bearing:last.bearing,pitch:76,
       }).zoom:last.zoom
@@ -216,7 +219,9 @@ export function MapStage({focus,date,cells,harmonized,aoi,tool,onArea,onCirclePr
         }else{
           transferRef.current=null
           const timeInRegion=elapsed-transferTime
-          if(basedOnFlight){
+          if(globe&&arrival){
+            applyFrame(arrival)
+          }else if(basedOnFlight){
             applyFrame(toMapCamera(basedOnFlight.at(timeInRegion/basedOnFlight.duration)))
           }else{
             let from=regionalStart
@@ -234,11 +239,14 @@ export function MapStage({focus,date,cells,harmonized,aoi,tool,onArea,onCirclePr
         if(elapsed<totalDuration)animation.current=requestAnimationFrame(tick)
         else{
           if(track)callbacks.current.onTourEnd()
-          else commandedCamera.current=null
+          else {
+            commandedCamera.current=null
+            if(globe)setRegionFlying(false)
+          }
         }
       }
       if(basedOnFlight&&!transfer)applyFrame(toMapCamera(basedOnFlight.at(0)))
-      if(basedOnFlight||shots.length)animation.current=requestAnimationFrame(tick)
+      if(globe||basedOnFlight||shots.length)animation.current=requestAnimationFrame(tick)
     })
     return ()=>{
       active=false
@@ -438,7 +446,7 @@ export function MapStage({focus,date,cells,harmonized,aoi,tool,onArea,onCirclePr
     </div>
     <div className="map-vignette" aria-hidden="true" />
     <StarField width={size.width} height={Math.min(112,Math.round(size.height*.22))}/>
-    {orbiting&&<div className="orbital-layer" ref={spaceLayer} aria-hidden="true">
+    {(orbiting||regionFlying)&&<div className="orbital-layer" ref={spaceLayer} aria-hidden="true">
       <Suspense fallback={null}><SpaceCanvas frame={size} transferRef={transferRef} layerRef={spaceLayer}/></Suspense>
     </div>}
     <div className="map-edge top-edge" /><div className="map-edge bottom-edge" />
