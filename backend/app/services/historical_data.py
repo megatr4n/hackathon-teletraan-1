@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import math
 import os
 import re
 from datetime import date
@@ -10,6 +11,7 @@ from pathlib import Path
 
 import shapely
 import yaml
+from shapely.geometry import shape
 
 
 REPO = Path(__file__).resolve().parents[3]
@@ -131,3 +133,44 @@ def catalog_items(kind, parent):
         return [feature["properties"] for feature in geography_file(name)["features"]]
     except FileNotFoundError:
         return []
+
+
+def geometry_for(area):
+    if area.kind == "circle":
+        longitude, latitude = area.center
+        angle = area.radius_km / 6371.0088
+        latitude_radians = math.radians(latitude)
+        delta_latitude = math.degrees(angle)
+        south, north = max(-90, latitude - delta_latitude), min(90, latitude + delta_latitude)
+        if south == -90 or north == 90:
+            return None, (-180, south, 180, north)
+        delta_longitude = math.degrees(math.asin(math.sin(angle) / math.cos(latitude_radians)))
+        west, east = longitude - delta_longitude, longitude + delta_longitude
+        if west < -180 or east > 180:
+            west, east = -180, 180
+        return None, (west, south, east, north)
+
+    raw = area.geometry if area.kind == "geometry" else catalog_feature(
+        area.kind, area.id, area.parent_id
+    )["geometry"]
+    if raw.get("type") not in {"Polygon", "MultiPolygon"}:
+        raise ValueError("Expected a Polygon or MultiPolygon")
+    polygon = shape(raw)
+    if area.kind != "geometry" and not shapely.is_valid(polygon):
+        # Repair overlaps and self-intersections in the simplified catalog boundaries.
+        polygon = polygon.buffer(0)
+    if polygon.is_empty or shapely.has_z(polygon) or not shapely.is_valid(polygon):
+        raise ValueError("Invalid WGS84 polygon")
+    vertices = shapely.get_coordinates(polygon)
+    if len(vertices) > 30_000 or not (
+        ((vertices[:, 0] >= -180) & (vertices[:, 0] <= 180))
+        & ((vertices[:, 1] >= -90) & (vertices[:, 1] <= 90))
+    ).all():
+        raise ValueError("Geometry exceeds WGS84 bounds or the vertex limit")
+    if area.kind == "geometry":
+        for part in shapely.get_parts(polygon):
+            for ring in [part.exterior, *part.interiors]:
+                if any(abs(a[0] - b[0]) > 180 for a, b in zip(ring.coords, ring.coords[1:])):
+                    raise ValueError("Split polygons crossing the antimeridian into a MultiPolygon")
+    shapely.prepare(polygon)
+    return polygon, polygon.bounds
