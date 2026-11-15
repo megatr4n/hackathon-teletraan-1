@@ -415,7 +415,7 @@ export function App() {
     navigateTo(snapshot.camera,()=>setSettings({...snapshot,focus:restoredFocus}),true,0)
     setMessage('Opened '+pin.name)
   }
-  async function exportReport() {
+  async function exportReport(format:'pdf'|'json'='pdf') {
     const selection=actual.selection
     if(historical&&!selection)return
     setExportingReport(true)
@@ -425,7 +425,14 @@ export function App() {
         const params=new URLSearchParams({date,start:from,end:to})
         const response=await historicalFetch('/queries/'+selection.query_id+'/report-data?'+params)
         const observations:HistoricalReport=await response.json()
-        await report.exportHistoricalReport(settings,observations,from,to)
+        const analysis=await import('./report/analysis')
+        analysis.validateReport(observations,from,to,selection.query_id)
+        if(format==='json'){
+          const blob=new Blob([JSON.stringify(analysis.reportEvidence(observations,new Date().toISOString()),null,2)],{type:'application/json'})
+          const url=URL.createObjectURL(blob),link=document.createElement('a')
+          link.href=url;link.download='teletraan-1-'+from+'-'+to+'-report-evidence.json';link.click()
+          setTimeout(()=>URL.revokeObjectURL(url),1000)
+        }else await report.exportHistoricalReport(settings,observations,from,to)
       }else{
         await report.exportStatisticalReport({
           settings,day:stats,period,estimates,viirs,adjustment,delta,severity,activeCells:cells.length,
@@ -689,7 +696,8 @@ export function App() {
         <div className="export-buttons">
           <Button className="csv-button" disabled={historical?!actual.selection:!cells.length} onClick={()=>exportData('csv')}><ArrowDownToLine size={15}/> Download Filtered CSV<ArrowUpRight size={13} className="button-tail"/></Button>
           <Button className="geojson-button" disabled={historical?!actual.selection:!cells.length} onClick={()=>exportData('geojson')}><CodeXml size={15}/> Export GeoJSON for QGIS<ArrowUpRight size={13} className="button-tail"/></Button>
-          <Button className="pdf-button" disabled={exportingReport||(historical&&!actual.selection)} onClick={exportReport}><FileText size={15}/> {exportingReport?'Preparing PDF…':'Export Statistical Report (PDF)'}<ArrowUpRight size={13} className="button-tail"/></Button>
+          <Button className="pdf-button" disabled={exportingReport||(historical&&!actual.selection)} onClick={()=>exportReport()}><FileText size={15}/> {exportingReport?'Preparing PDF…':'Export Statistical Report (PDF)'}<ArrowUpRight size={13} className="button-tail"/></Button>
+          {historical&&<Button className="geojson-button" disabled={exportingReport||!actual.selection} onClick={()=>exportReport('json')}><CodeXml size={15}/> Export Report Evidence (JSON)<ArrowUpRight size={13} className="button-tail"/></Button>}
         </div>
       </aside>
     </div>
