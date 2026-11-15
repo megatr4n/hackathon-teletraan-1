@@ -4,7 +4,7 @@ import * as Dialog from '@radix-ui/react-dialog'
 import { Activity, ArrowDown, ArrowDownToLine, ArrowUpRight, Bookmark, BookmarkPlus, Camera as CameraIcon, Circle, ChevronLeft, ChevronRight, Clock3, CodeXml, Crosshair, Database, FileText, Film, Focus as FocusIcon, Grid2X2, Layers3, Lasso, Leaf, MapPin, Puzzle as PuzzleIcon, Ruler, Search, SlidersHorizontal, Satellite, TriangleAlert, X, Zap } from 'lucide-react'
 import { areaPolygon, cellPolygon, clampDate, DAY, doy, firstDate, iso, maxCircleRadius, number, prettyDate, territories, type Aoi, type Cell, type Coord } from './data'
 import { calibration, calibrationAccuracy } from './calibration'
-import { cellObservations, dailyEstimates, dailyStats, dateIndex, periodStats, viirsStart } from './estimates'
+import { cellObservations, dailyEstimates, dailyStats, dateIndex, emptyObservation, periodStats, viirsStart } from './estimates'
 import { archiveDates, observations } from './observations'
 import { countryOptions, emptyRegions, focusForRegion, geography, type AreaMode, type Region, type RegionCollection, type RegionFeature } from './geography'
 import { MapStage, type Tool } from './MapStage'
@@ -30,6 +30,8 @@ function UtcClock() {
 }
 
 const narrowWorkbench='(max-width: 900px)'
+const emptyRecordingSeries=archiveDates.map(()=>dailyStats(emptyObservation(),'all',false))
+const emptyDemoCells:Cell[]=[]
 const normalize=(value:string)=>value.normalize('NFD').replace(/\p{Diacritic}/gu,'').toLowerCase()
 const countryAliases = new Map(territories.map(country=>[country.iso3,normalize(country.name_uk)]))
 
@@ -178,15 +180,15 @@ export function App() {
   },[region,areaMode,ecoregions,admins,countries])
   const boundary=useMemo(()=>areaMode==='custom'&&aoi?.type==='lasso'?areaPolygon(aoi):selected?.geometry,[areaMode,aoi,selected])
   const circle=areaMode==='custom'&&aoi?.type==='circle'?aoi:undefined
-  const source=useMemo(()=>observations(focus,boundary,circle),[focus,boundary,circle])
-  const history=useMemo(()=>source.history(),[source])
+  const source=useMemo(()=>recordingMode?undefined:observations(focus,boundary,circle),[recordingMode,focus,boundary,circle])
+  const history=useMemo(()=>source?.history(),[source])
   const viirsDay=dateIndex(viirsStart,firstDate)
-  const series=useMemo(()=>history.map((day,index)=>dailyStats(day,pass,index>=viirsDay)),[history,pass,viirsDay])
+  const series=useMemo(()=>history?.map((day,index)=>dailyStats(day,pass,index>=viirsDay))??emptyRecordingSeries,[history,pass,viirsDay])
   const activeIndex=dateIndex(date,firstDate)
   const stats=series[activeIndex]
   const startIndex=dateIndex(from,firstDate), endIndex=dateIndex(to,firstDate)
   const period=useMemo(()=>periodStats(series,startIndex,endIndex,pass,viirsDay),[series,startIndex,endIndex,pass,viirsDay])
-  const demoCells=useMemo(()=>source.cellsForDay(date).filter(cell=>pass==='all'||cell.pass===pass),[source,date,pass])
+  const demoCells=useMemo(()=>source?.cellsForDay(date).filter(cell=>pass==='all'||cell.pass===pass)??emptyDemoCells,[source,date,pass])
   const estimates=dailyEstimates(stats,harmonized,focus)
   const adjustment=stats.raw?100*(stats.corrected/stats.raw-1):0
   const delta=100*(estimates.frp/focus.median-1)
