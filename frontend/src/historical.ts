@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { MultiPolygon, Polygon } from 'geojson'
-import { areaPolygon, firstDate, lastDate, type Coord, type Pass } from './data'
+import { areaPolygon, firstDate, lastDate, type MapCell, type Coord, type Pass } from './data'
 import { calibration } from './calibration'
 import type { Metric, Snapshot } from './pins'
 
@@ -184,4 +184,20 @@ export function historicalCalendarValue(date:string, day:ActualDay|undefined, me
   }
   const modis=day?.[count?'rawCount':'raw']??null
   return {value:modis,source:'MODIS',details:modis===null?'No MODIS value':undefined}
+}
+
+export function historicalCells(rows:CellRow[], harmonized:boolean):MapCell[] {
+  const groups=new Map<string,CellRow[]>()
+  for(const row of rows){
+    const group=groups.get(row.cell_id)
+    if(group)group.push(row)
+    else groups.set(row.cell_id,[row])
+  }
+  return Array.from(groups,([id,group])=>{
+    const modis=group.filter(row=>row.platform!=='snpp')
+    const visual=modis.length?modis:group
+    const value=(row:CellRow)=>row.frp_sum_mw===null?null:row.frp_sum_mw*(harmonized&&row.platform!=='snpp'&&row.pass!=='unknown'?calibration.dailyFrp[row.pass]:1)
+    return {id,center:group[0].center,geometry:group[0].geometry,raw:nullableSum(visual.map(value)),
+      weight:visual.reduce((sum,row)=>sum+(row.detection_count??0),0),pass:visual.some(row=>row.pass==='day')?'day':'night'}
+  })
 }

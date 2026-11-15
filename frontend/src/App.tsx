@@ -13,6 +13,7 @@ import { Button, Segmented } from './ui'
 import { PuzzleDropdown } from './PuzzlePanels'
 import { puzzleFocus, type Puzzle } from './dailyPuzzle'
 import { useDailyPuzzle } from './useDailyPuzzle'
+import { historicalApi, historicalCells, historicalRequest, useHistorical } from './historical'
 import { snapshotFromUrl, updateViewUrl } from './viewLink'
 
 import { cinematicTrack, tourRegions, type CameraCommand } from './cameraTour'
@@ -167,17 +168,22 @@ export function App() {
   const stats=series[activeIndex]
   const startIndex=dateIndex(from,firstDate), endIndex=dateIndex(to,firstDate)
   const period=useMemo(()=>periodStats(series,startIndex,endIndex,pass,viirsDay),[series,startIndex,endIndex,pass,viirsDay])
-  const cells=useMemo(()=>source.cellsForDay(date).filter(cell=>pass==='all'||cell.pass===pass),[source,date,pass])
+  const demoCells=useMemo(()=>source.cellsForDay(date).filter(cell=>pass==='all'||cell.pass===pass),[source,date,pass])
   const estimates=dailyEstimates(stats,harmonized,focus)
   const adjustment=stats.raw?100*(stats.corrected/stats.raw-1):0
   const delta=100*(estimates.frp/focus.median-1)
-  const severity=cells.length&&delta>130?'critical':cells.length&&delta>0?'elevated':'normal'
+  const severity=demoCells.length&&delta>130?'critical':demoCells.length&&delta>0?'elevated':'normal'
   const viirs=date>=viirsStart
 
   const game=useDailyPuzzle(focus.id,hasSelectedDay?date:null,setMessage)
   useEffect(()=>{
     if(!game.open&&!orbiting)updateViewUrl(settings)
   },[game.open,orbiting,settings])
+  const historicalPreviewEnabled=false
+  const historical=historicalPreviewEnabled&&historicalApi!==undefined&&!game.open
+  const actual=useHistorical(historical,historicalRequest(settings),date)
+  const cells=useMemo(()=>historical?historicalCells(actual.rows??[],harmonized):demoCells,[historical,actual.rows,harmonized,demoCells])
+
 
   useEffect(()=>{
     if(!playing)return
@@ -332,17 +338,17 @@ export function App() {
     const name='teletraan-1-'+focus.id.replace(/[^a-z0-9-]/gi,'-')+'-'+date
     if(format==='csv'){
       const header='cell_id,date,latitude,longitude,pass,selected_frp_mw,raw_modis_frp_mw,harmonized_modis_frp_mw,raw_modis_hotspots,harmonized_modis_hotspots,viirs_frp_mw,viirs_hotspots,mode,source'
-      const rows=cells.map(cell=>{
+      const rows=demoCells.map(cell=>{
         const v=values(cell)
         return [cell.id,date,cell.center[1].toFixed(6),cell.center[0].toFixed(6),cell.pass,v.selected_frp_mw.toFixed(4),cell.raw.toFixed(4),
           v.harmonized_modis_frp_mw.toFixed(4),v.raw_modis_hotspots,v.harmonized_modis_hotspots.toFixed(4),v.viirs_frp_mw?.toFixed(4),v.viirs_hotspots,v.mode,v.source].join(',')
       })
       download(name+'.csv',[header,...rows].join('\r\n'),'text/csv;charset=utf-8')
     }else{
-      const features=cells.map(cell=>{const feature=cellPolygon(cell);return {...feature,properties:{...feature.properties,...values(cell)}}})
+      const features=demoCells.map(cell=>{const feature=cellPolygon(cell);return {...feature,properties:{...feature.properties,...values(cell)}}})
       download(name+'.geojson',JSON.stringify({type:'FeatureCollection',features},null,2),'application/geo+json')
     }
-    setMessage(number(cells.length)+' cells exported')
+    setMessage(number(demoCells.length)+' cells exported')
   }
 
   const displayOptions=areaMode==='ecoregions'?ecoList:countryList
@@ -433,7 +439,7 @@ export function App() {
     <div className="workbench">
       <aside className="filters">{queryFilters()}</aside>
 
-      <MapStage focus={focus} date={date} cells={cells} harmonized={harmonized} aoi={aoi} tool={tool} onArea={updateArea} onCirclePreviewRadius={setCirclePreviewRadius}
+      <MapStage focus={focus} date={date} cells={cells} historical={historical} harmonized={!historical&&harmonized} aoi={aoi} tool={tool} onArea={updateArea} onCirclePreviewRadius={setCirclePreviewRadius}
         expandedFilters={<>{queryFilters()}<section className="filter-section map-dates">
           <DateRangeFields from={from} to={to} onRange={range}/>
         </section></>}
