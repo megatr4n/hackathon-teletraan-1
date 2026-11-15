@@ -788,6 +788,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 .week-columns,.weekly-year { display:grid; grid-template-columns:42px repeat(53,minmax(0,1fr)); gap:2px; align-items:center }
 .week-columns { position:sticky; top:0; z-index:2; background:#0e131d; height:21px; color:#8495a7; font-size:8px }
 .weekly-year { position:relative; padding:2px 0; border-top:1px solid #263241 }
+.week-columns>span:first-child,.weekly-year .year {
+  grid-column:1; grid-row:1; position:sticky; left:0; z-index:2; background:#0e131d;
+}
 .weekly-year .year { font-size:11px }
 .calendar-week { position:relative; grid-row:1; min-width:0; height:12px; padding:0; border:1px solid #ffffff12; border-radius:1px }
 .calendar-week:disabled { opacity:.28 }

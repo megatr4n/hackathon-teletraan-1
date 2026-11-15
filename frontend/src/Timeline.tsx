@@ -274,14 +274,14 @@ export function Timeline({date,daySelected,puzzleMode,from,to,playing,onPlay,onD
             <polygon points={'0,16 '+weeks.map((week,i)=>(i+.5)+','+(16-15*getHeat(weekly[week.index].value,true))).join(' ')+' '+weeks.length+',16'}
               fill="#bb75475c" stroke="#f3935b" strokeWidth=".35"/>
           </svg>}
-          {weeks.map(week=>{
+          {weeks.map((week,column)=>{
             const reading=weekly[week.index]
             const disabled=week.index<min||week.index>max
             const title=disabled?week.from+' – '+week.to+' · Outside selected dates':weekLabel(rangeFor(week),reading,metric)
             return <button type="button" className="calendar-week" key={week.index} data-week={week.from}
               disabled={disabled} aria-label={title} title={title}
               aria-pressed={value===week.index} aria-haspopup="dialog" aria-expanded={shownWeek?.index===week.index}
-              style={view==='grid'?{backgroundColor:paint(reading.value,getHeat(reading.value,true),metric,historical)}:undefined}
+              style={{gridColumn:column+2,backgroundColor:view==='grid'?paint(reading.value,getHeat(reading.value,true),metric,historical):undefined}}
               onClick={event=>chooseWeek(week.index,event.currentTarget)}/>
           })}
         </div>)}
