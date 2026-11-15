@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from 'react'
-import maplibregl, { type GeoJSONSource, type RasterTileSource, type StyleSpecification } from 'maplibre-gl'
-import { Box, Grid3X3, Layers3, Map as MapIcon, Minus, Plus, Ruler, Satellite, Target } from 'lucide-react'
+import maplibregl, { type ExpressionSpecification, type GeoJSONSource, type RasterTileSource, type StyleSpecification } from 'maplibre-gl'
+import { Box, Grid3X3, Layers3, Map as MapIcon, Minus, Plus, Ruler, Satellite, ShieldAlert, Target } from 'lucide-react'
 import type { FeatureCollection, Geometry } from 'geojson'
 import { calibration } from './calibration'
 import { areaPolygon, cellPolygon, contains, coord, distance, offset, type Aoi, type MapCell, type Coord, type Focus } from './data'
@@ -12,6 +12,7 @@ import { initialSnapshot, type Camera, type MapOptions } from './pins'
 import { cameraBetween, demoTransferDuration, hotspotShots, transferCamera, transferDuration, type CameraCommand, type Shot } from './cameraTour'
 import { StarField } from './StarField'
 import type { SpaceTransfer } from './orbitalScene'
+import { zoneLevels, type FireZonesState } from './fireZones'
 
 const SpaceCanvas = lazy(() => import('./SpaceCanvas').then(module => ({default:module.SpaceCanvas})))
 let keplerModule:Promise<typeof import('./kepler')>|undefined
@@ -29,9 +30,11 @@ type Props = {
   countries:RegionCollection; admins:RegionCollection; ecoregions:RegionCollection; areaMode:AreaMode;
   selected:RegionFeature|undefined; onRegion:(region:RegionFeature,point?:Coord)=>void;
   measuring:boolean; orbiting:boolean; onTourEnd:()=>void; historical:boolean; playing:boolean;
+  zonesActive:boolean; zonesRequested:boolean; onToggleFireZones:()=>void; fireZones:FireZonesState;
 }
 const empty: FeatureCollection = {type:'FeatureCollection',features:[]}
 const overlayFade={duration:450,delay:0}
+const zoneColor:ExpressionSpecification = ['match',['get','level'],'core',zoneLevels.core.color,'elevated',zoneLevels.elevated.color,zoneLevels.outer.color]
 const satelliteTiles = (date:string) => 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Terra_CorrectedReflectance_TrueColor/default/'+date+'/GoogleMapsCompatible_Level9/{z}/{y}/{x}.jpg'
 const collection = (features:FeatureCollection['features']): FeatureCollection => ({type:'FeatureCollection',features})
 const labels: { name:string; point:Coord; type?:string }[] = [
@@ -58,6 +61,7 @@ function mapStyle(): StyleSpecification {
     fires:{type:'geojson',data:empty},
     fireCenters:{type:'geojson',data:empty},
     hazard:{type:'geojson',data:empty},
+    fireZones:{type:'geojson',data:empty},
     area:{type:'geojson',data:empty},
     circlePreview:{type:'geojson',data:empty},
     target:{type:'geojson',data:empty},
@@ -112,6 +116,10 @@ function mapStyle(): StyleSpecification {
       'line-color':['case',['==',['get','z'],2.5],'#ffd195','#e9a874'],
       'line-width':['case',['==',['get','z'],2.5],1.8,1.15],'line-dasharray':[4,2.5],'line-opacity':.94,
     }},
+    {id:'fire-zone-fill',type:'fill',source:'fireZones',layout:{'fill-sort-key':['match',['get','level'],'core',2,'elevated',1,0]},
+      paint:{'fill-color':zoneColor,'fill-opacity':['match',['get','level'],'core',.72,'elevated',.50,.32]}},
+    {id:'fire-zone-line',type:'line',source:'fireZones',layout:{'line-sort-key':['match',['get','level'],'core',2,'elevated',1,0]},
+      paint:{'line-color':zoneColor,'line-width':1.5,'line-opacity':.9}},
     {id:'area-fill',type:'fill',source:'area',paint:{'fill-color':'#26a4bf','fill-opacity':.09}},
     {id:'area-halo',type:'line',source:'area',layout:{'line-join':'round'},paint:{
       'line-color':'#2bc8ef','line-width':['interpolate',['linear'],['zoom'],3,3,8,7,12,10],'line-blur':3,'line-opacity':.46,
@@ -133,7 +141,8 @@ function hazardShape(center:Coord,x:number,y:number,rx:number,ry:number,z:number
 }
 
 export function MapStage({focus,date,cells,loadingCells,harmonized,aoi,tool,onArea,onCirclePreviewRadius,command,onCamera,options,onOptions,
-  countries,admins,ecoregions,areaMode,selected,onRegion,measuring,orbiting,onTourEnd,historical,playing}:Props) {
+  countries,admins,ecoregions,areaMode,selected,onRegion,measuring,orbiting,onTourEnd,historical,playing,
+  zonesActive,zonesRequested,onToggleFireZones,fireZones}:Props) {
   const holder=useRef<HTMLDivElement>(null), map=useRef<maplibregl.Map|null>(null)
   const fire=useRef<FirePillars|null>(null), places=useRef<maplibregl.Marker[]>([])
   const [ready,setReady]=useState(false)
@@ -329,13 +338,14 @@ export function MapStage({focus,date,cells,loadingCells,harmonized,aoi,tool,onAr
     const instance=map.current
     if (!ready || !instance) return
     const set=(name:string,data:FeatureCollection<Geometry>)=>(instance.getSource(name) as GeoJSONSource).setData(data)
-    set('grid',collection(cells.map(cell=>cellPolygon(cell))))
-    set('fires',collection(cells.flatMap(cell=>{
+    const visibleCells=zonesActive?[]:cells
+    set('grid',collection(visibleCells.map(cell=>cellPolygon(cell))))
+    set('fires',collection(visibleCells.flatMap(cell=>{
       if(cell.raw===null)return []
       const item=cellPolygon(cell,.72)
       return {...item,properties:{...item.properties,power:cell.raw*(harmonized?calibration.dailyFrp[cell.pass]:1)}}
     })))
-    set('fireCenters',collection(historical?cells.map(cell=>({type:'Feature',properties:{detections:cell.weight},
+    set('fireCenters',collection(historical?visibleCells.map(cell=>({type:'Feature',properties:{detections:cell.weight},
       geometry:{type:'Point',coordinates:cell.center}})):[]))
     const hazards = showDemoContours ? [hazardShape(focus.center,6,-1,64,40,1.5),hazardShape(focus.center,-12,13,24,13,2.5),hazardShape(focus.center,25,-12,31,16,2.5)] : []
     set('hazard',collection(hazards))
@@ -344,11 +354,40 @@ export function MapStage({focus,date,cells,loadingCells,harmonized,aoi,tool,onAr
       [offset(focus.center,-4,0),offset(focus.center,-1.7,0)],[offset(focus.center,1.7,0),offset(focus.center,4,0)],
       [offset(focus.center,0,-4),offset(focus.center,0,-1.7)],[offset(focus.center,0,1.7),offset(focus.center,0,4)],
     ]}}]))
-  },[cells,focus,harmonized,ready,aoi,selected,historical,showDemoContours])
+  },[cells,focus,harmonized,ready,aoi,selected,historical,showDemoContours,zonesActive])
 
   useEffect(()=>{
-    if(ready)fire.current?.update(cells,harmonized,!playing)
-  },[cells,harmonized,ready,playing])
+    if(ready)fire.current?.update(zonesActive?[]:cells,harmonized,!playing)
+  },[cells,harmonized,ready,playing,zonesActive])
+
+  useEffect(()=>{
+    const instance=map.current
+    if(!ready||!instance)return
+    instance.getSource<GeoJSONSource>('fireZones')?.setData(fireZones.data??empty)
+    if(!fireZones.data||tool||measuring)return
+    const years=fireZones.data.reference_years
+    const popup=new maplibregl.Popup({closeButton:false,closeOnClick:false,className:'fire-zone-popup',offset:14})
+    const hide=()=>popup.remove()
+    const hover=(event:maplibregl.MapLayerMouseEvent)=>{
+      const feature=event.features?.[0]
+      if(!feature)return
+      const {level,min_years,max_years}=feature.properties
+      const label=zoneLevels[level as keyof typeof zoneLevels]?.label
+      if(!label)return
+      const span=min_years===max_years?String(min_years):min_years+'–'+max_years
+      popup.setLngLat(event.lngLat).setText(label+' · '+span+' of '+years+' years with detections')
+      if(!popup.isOpen())popup.addTo(instance)
+    }
+    instance.on('mousemove','fire-zone-fill',hover)
+    instance.on('mouseleave','fire-zone-fill',hide)
+    instance.on('dragstart',hide)
+    return ()=>{
+      instance.off('mousemove','fire-zone-fill',hover)
+      instance.off('mouseleave','fire-zone-fill',hide)
+      instance.off('dragstart',hide)
+      hide()
+    }
+  },[ready,fireZones.data,tool,measuring])
 
   useEffect(()=>{
     const instance=map.current
@@ -543,7 +582,14 @@ export function MapStage({focus,date,cells,loadingCells,harmonized,aoi,tool,onAr
         <polygon points={trace.map(point=>point.join(',')).join(' ')} fill="#55c9e52a" stroke="#65d7f3" strokeDasharray="5 3" />
       </svg></div>}
     {tool && <div className="draw-hint"><Target size={14}/>{tool==='circle'?'Drag from the center to set the radius':'Drag to outline your area'}</div>}
-    <div className="map-legend">
+    {zonesActive&&fireZones.data?<div className="map-legend fire-zone-legend">
+      <div className="legend-title"><ShieldAlert size={13}/> HISTORICAL FIRE ZONES</div>
+      <p>MODIS · {fireZones.data.from.slice(0,4)}–{fireZones.data.to.slice(0,4)}</p>
+      <ul aria-label="Historical recurrence">
+        {Object.values(zoneLevels).map(({color,label})=><li key={label}><i style={{background:color}}/>{label}</li>)}
+      </ul>
+      <p>Historical detections only. For preliminary site screening.</p>
+    </div>:<div className={zonesRequested?'map-legend fire-zone-legend':'map-legend'}>
       <div className="legend-title"><Layers3 size={13}/> FIRE RADIATIVE POWER <InfoTip label="Fire radiative power" help={frpHelp+' Taller pillars indicate higher FRP. The height scale compresses extremes so lower and moderate readings remain distinguishable.'}/></div>
       <div className="thermal-ramp" />
       <div className="legend-scale"><span>0</span><span>50</span><span>100</span><span>150+ MW</span></div>
@@ -551,7 +597,9 @@ export function MapStage({focus,date,cells,loadingCells,harmonized,aoi,tool,onAr
         {showDemoContours&&<div><i className="legend-demo-outline"/>Demo anomaly zones</div>}
         {(aoi||selected)&&<div><i className="legend-area-outline"/>Selected area</div>}
       </div>}
-    </div>
+      {zonesRequested&&(fireZones.error?<p role="alert">{fireZones.error} <Button onClick={fireZones.retry}>Retry</Button></p>:
+        <p role="status">{fireZones.data?'No qualifying zones intersect this area.':'Loading fire zones…'}</p>)}
+    </div>}
     <div className="map-controls">
       <Button className="compass" aria-label="Reset bearing to true north" help="Rotate the map so true north points up." onClick={()=>changeCamera({bearing:0},450)}>
         <span className="compass-face" style={{transform:'rotate('+(-camera.bearing)+'deg)'}}><b>N</b><i/><em/></span>
@@ -560,6 +608,8 @@ export function MapStage({focus,date,cells,loadingCells,harmonized,aoi,tool,onAr
         <Button help="Switch between an overhead view and a tilted view." aria-label="Toggle 2D / 3D" aria-pressed={camera.pitch>1} onClick={()=>changeCamera({pitch:camera.pitch>1?0:50},550)}><Box size={14}/>{camera.pitch>1?'3D':'2D'}</Button>
         <Button help="Switch between the basemap and satellite imagery." aria-label="Switch Map / Sat" aria-pressed={options.satellite} onClick={()=>onOptions({...options,satellite:!options.satellite})}>{options.satellite?<Satellite size={16}/>:<MapIcon size={16}/>}</Button>
         <Button help="Show or hide the grid used to aggregate nearby fire detections." aria-label="Toggle 3×3 km grid" aria-pressed={options.grid} onClick={()=>onOptions({...options,grid:!options.grid})}><Grid3X3 size={16}/></Button>
+        {historical&&<Button help="Show areas with recurring satellite fire detections across the archive." aria-label="Historical fire zones" aria-pressed={zonesRequested} disabled={orbiting}
+          onClick={onToggleFireZones}><ShieldAlert size={16}/></Button>}
       </div>
       <div className="map-control-group">
         <Button help="See a smaller area in greater detail." aria-label="Zoom in" onClick={()=>changeCamera({zoom:Math.min(17,camera.zoom+1)},280)}><Plus size={17}/></Button>
