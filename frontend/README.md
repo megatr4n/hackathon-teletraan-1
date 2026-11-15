@@ -47,7 +47,7 @@ Methods: [NASA JPL MASTER FRP ATBD](https://masterprojects.jpl.nasa.gov/download
 
 The E21 registry in `../config/coefficients.json` records the numeric coefficients and scope from the verified research archive. Its daily FRP candidates require Aqua source features for an exact, screened research bounding box in 2012–2025. Its count model targets full UTC months of filtered records. The spatial model requires matched observation pairs. The weekly calendar and grid use the existing prototype calibration, with sensor selection performed per day.
 
-Historical FRP uses recorded MODIS before the S-NPP archive starts. The prototype adjustment applies to Aqua FRP from known day and night passes. Recorded Terra and unknown-pass FRP are retained. After the transition, the calendar and FRP pillars choose S-NPP for a day with a reported FRP value. Otherwise they use the MODIS estimate. Period FRP sums use the same per-day calculation. The FRP calendar tooltip shows both modes and their difference on the shared scale.
+The historical FRP calendar uses the daily MODIS adjustment for weekly sums before S-NPP, and selects S-NPP per day when FRP is available after the transition. The map selects S-NPP per grid cell with MODIS fallback. Period analytics use the configured period coefficient where applicable. The calendar tooltip shows the Raw and Harmonized weekly totals and their difference.
 
 ## Geographic data
 

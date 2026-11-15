@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { MultiPolygon, Polygon } from 'geojson'
 import { areaPolygon, firstDate, lastDate, type MapCell, type Coord, type Pass } from './data'
-import { calibration } from './calibration'
+import { calibration, periodFrpMinimumDays } from './calibration'
 import type { Metric, Snapshot } from './pins'
 import { datesInRange } from './calendarWeeks'
 
@@ -180,19 +180,15 @@ export function nullableSum(values:(number|null|undefined)[]) {
   return valid.length?valid.reduce((sum,value)=>sum+value,0):null
 }
 
-function aquaFrpAdjustment(value:number|null|undefined,pass:'day'|'night') {
-  return (value??0)*(calibration.dailyFrp[pass]-1)
-}
-
 export function actualDay(day:Day|undefined, pass:Pass) {
   const modis=day?.platforms.filter(row=>row.platform!=='snpp')??[]
   const viirs=day?.platforms.find(row=>row.platform==='snpp')
   const rawCount=nullableSum(modis.map(row=>row.detection_count))
   const raw=nullableSum(modis.map(row=>row.frp_sum_mw))
-  // The prototype matched FRP coefficient is an Aqua estimate. Terra and unknown passes keep their reported power.
-  const aqua=modis.find(row=>row.platform==='aqua')
-  const corrected=raw===null?null:raw+aquaFrpAdjustment(aqua?.by_pass.day?.frp_sum_mw,'day')+
-    aquaFrpAdjustment(aqua?.by_pass.night?.frp_sum_mw,'night')
+  const corrected=nullableSum(modis.flatMap(row=>(['day','night'] as const).map(phase=>{
+    const value=row.by_pass[phase]?.frp_sum_mw
+    return typeof value==='number'?value*calibration.dailyFrp[phase]:null
+  })))
   return {raw,rawCount,corrected,correctedCount:rawCount===null?null:rawCount*calibration.hotspots[pass],
     viirs:viirs?.frp_sum_mw??null,viirsCount:viirs?.detection_count??null}
 }
@@ -210,7 +206,7 @@ export function historicalCalendarValue(date:string, day:ActualDay|undefined, me
     const missing=afterTransition?'No VIIRS or MODIS value':'No MODIS value to harmonize'
     return {
       value:modisEstimate,
-      source:count?'Harmonized MODIS (estimate)':'MODIS with prototype Aqua adjustment',
+      source:'Harmonized MODIS (estimate)',
       details:modisEstimate===null?missing:undefined,
     }
   }
@@ -218,7 +214,7 @@ export function historicalCalendarValue(date:string, day:ActualDay|undefined, me
   return {value:modis,source:'MODIS',details:modis===null?'No MODIS value':undefined}
 }
 
-export function historicalCells(rows:CellRow[], date:string, harmonized:boolean, observedViirsFrp?:boolean):MapCell[] {
+export function historicalCells(rows:CellRow[], date:string, harmonized:boolean):MapCell[] {
   const groups=new Map<string,CellRow[]>()
   for(const row of rows){
     const group=groups.get(row.cell_id)
@@ -226,16 +222,15 @@ export function historicalCells(rows:CellRow[], date:string, harmonized:boolean,
     else groups.set(row.cell_id,[row])
   }
   const afterTransition=date>=snppArchiveStart
-  const useViirs=afterTransition&&(observedViirsFrp??rows.some(row=>row.platform==='snpp'&&row.frp_sum_mw!==null))
   const modisValue=(row:CellRow)=>{
-    const value=row.frp_sum_mw
-    if(value===null||row.platform!=='aqua'||row.pass==='unknown'||!(afterTransition||harmonized))return value
-    return value+aquaFrpAdjustment(value,row.pass)
+    if(row.frp_sum_mw===null||!(afterTransition||harmonized))return row.frp_sum_mw
+    return row.pass==='unknown'?null:row.frp_sum_mw*calibration.dailyFrp[row.pass]
   }
   return Array.from(groups,([id,group])=>{
-    const frp=useViirs?nullableSum(group.filter(row=>row.platform==='snpp').map(row=>row.frp_sum_mw)):
-      nullableSum(group.filter(row=>row.platform!=='snpp').map(modisValue))
-    return {id,center:group[0].center,geometry:group[0].geometry,raw:frp,
+    const viirs=group.filter(row=>row.platform==='snpp')
+    const modis=group.filter(row=>row.platform!=='snpp')
+    const viirsFrp=afterTransition?nullableSum(viirs.map(row=>row.frp_sum_mw)):null
+    return {id,center:group[0].center,geometry:group[0].geometry,raw:viirsFrp??nullableSum(modis.map(modisValue)),
       weight:group.reduce((sum,row)=>sum+(row.detection_count??0),0),pass:group.some(row=>row.pass==='day')?'day':'night'}
   })
 }
@@ -250,10 +245,15 @@ export function scoreDetails(day:Day|undefined) {
 
 const metricFields=['raw','rawCount','corrected','correctedCount','viirs','viirsCount'] as const
 
-export function actualPeriod(periods:{date:string; values:ActualDay}[]) {
+export function actualPeriod(rows:{date:string; values:ActualDay}[], days:number, pass:Pass) {
+  const usePeriodCoefficient=days>=periodFrpMinimumDays
+  const periods=rows.map(row=>{
+    const {raw}=row.values
+    return {...row,values:{...row.values,corrected:usePeriodCoefficient&&raw!==null?raw*calibration.periodFrp[pass]:row.values.corrected}}
+  })
   const totals=Object.fromEntries(metricFields.map(field=>[field,nullableSum(periods.map(row=>row.values[field]))])) as ActualDay
   const denominators=Object.fromEntries(metricFields.map(field=>[field,periods.filter(row=>row.values[field]!==null).length])) as Record<keyof ActualDay,number>
   const peak=periods.reduce<typeof periods[number]|undefined>((current,row)=>
     row.values.corrected!==null&&(!current||row.values.corrected>(current.values.corrected??0))?row:current,undefined)
-  return {totals,denominators,peak,activeDays:periods.filter(row=>row.values.rawCount!==null||row.values.viirsCount!==null).length}
+  return {totals,denominators,peak,activeDays:periods.filter(row=>row.values.rawCount!==null||row.values.viirsCount!==null).length,usePeriodCoefficient}
 }

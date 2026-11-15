@@ -197,19 +197,15 @@ export function App() {
   const mapFrom=hasSelectedDay?date:activeWeek.from
   const mapTo=hasSelectedDay?date:activeWeek.to
   const actual=useHistorical(historical,historicalRequest(settings),date,mapFrom,mapTo)
-  const archiveDays=actual.days
-  const viirsFrpDays=useMemo(()=>new Map(archiveDays?.map(day=>[day.date,
-    day.platforms.some(platform=>platform.platform==='snpp'&&platform.frp_sum_mw!==null)])),[archiveDays])
   const cells=useMemo(()=>{
-    if(historical)return sumMapCells(actual.mapDays?.map(day=>historicalCells(
-      day.rows,day.date,harmonized,viirsFrpDays.get(day.date)))??[])
+    if(historical)return sumMapCells(actual.mapDays?.map(day=>historicalCells(day.rows,day.date,harmonized))??[])
     return sumMapCells(datesInRange(mapFrom,mapTo).map(day=>source.cellsForDay(day)
       .filter(cell=>pass==='all'||cell.pass===pass)
       .map(cell=>{
         const readings=cellObservations(cell,pass)
         return {...cell,raw:!game.open&&day>=viirsStart?readings.viirsFrp:harmonized?readings.correctedFrp:cell.raw}
       })))
-  },[actual.mapDays,game.open,harmonized,historical,mapFrom,mapTo,pass,source,viirsFrpDays])
+  },[actual.mapDays,game.open,harmonized,historical,mapFrom,mapTo,pass,source])
   const mapCellLimit=20_000
   const mapCells=useMemo(()=>cells.length>mapCellLimit?cells.slice(0,mapCellLimit):cells,[cells])
   const mappedDetections=useMemo(()=>historical&&actual.mapDays?
@@ -230,7 +226,8 @@ export function App() {
     }),false)
     return {count:aggregate('count'),frp:aggregate('frp')}
   },[game.open,harmonized,hasSelectedDay,historical,mapFrom,mapTo,observedDays,series])
-  const observedPeriod=useMemo(()=>actualPeriod(observedDays.filter(day=>day.date>=from&&day.date<=to)),[observedDays,from,to])
+  const observedPeriod=useMemo(()=>actualPeriod(observedDays.filter(day=>day.date>=from&&day.date<=to),
+    endIndex-startIndex+1,pass),[observedDays,from,to,startIndex,endIndex,pass])
   const observedDay=actualDay(actual.day,pass)
   const daily=historical?observedDay:stats
   const totals=historical?observedPeriod.totals:period.totals
@@ -542,7 +539,7 @@ export function App() {
         <section className="filter-section calibration-controls">
           <h3><Layers3 size={14}/>Intercalibration
             <InfoTip label="Intercalibration" help={(historical
-              ? 'Before 20 January 2012, Raw Satellite shows recorded MODIS. Harmonized FRP applies the prototype Aqua adjustment and retains recorded Terra FRP. From that date the calendar and FRP pillars select VIIRS for a day when it has a value. Otherwise they use the MODIS estimate.'
+              ? 'Before 20 January 2012, Raw Satellite shows original MODIS values and Harmonized adjusts them to the VIIRS scale. From that date, the map prefers VIIRS FRP per cell and the calendar prefers VIIRS per daily metric. Each uses adjusted MODIS when the corresponding VIIRS value is unavailable.'
               : 'In the demo, Raw and Harmonized show different MODIS values before 2012. From 2012 both show the simulated VIIRS values on the map and calendar.')+(!researchCalibration.weekly_applicable?
                 ' Weekly totals use the existing calibration. E21 models require daily regional Aqua features, full UTC calendar months, or matched spatial pairs.':'')}/>
           </h3>
@@ -670,7 +667,7 @@ export function App() {
             <SensorRow label="Raw MODIS FRP sum" value={display(totals.raw)} unit={historical?'MW':'MW·day'}/>
             <SensorRow label="Harmonized MODIS FRP sum" value={display(totals.corrected)} unit={historical?'MW':'MW·day'} active={harmonized}/>
             {period.viirsDays>0&&<SensorRow label="VIIRS FRP sum" value={display(totals.viirs)} unit={historical?'MW':'MW·day'}/>}
-            <div className="sensor-group period-group">Daily averages <span>{!historical&&period.usePeriodCoefficient?'PERIOD FRP':'DAILY FRP'}</span></div>
+            <div className="sensor-group period-group">Daily averages <span>{period.usePeriodCoefficient?'PERIOD FRP':'DAILY FRP'}</span></div>
             <SensorRow label="Raw MODIS hotspots" value={mean('rawCount')} unit="/day"/>
             <SensorRow label="Harmonized MODIS hotspots" value={mean('correctedCount')} unit="/day" active={harmonized}/>
             {period.viirsDays>0&&<SensorRow label="VIIRS hotspots" value={mean('viirsCount')} unit="/day"/>}
