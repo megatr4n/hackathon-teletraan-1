@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { areaPolygon, firstDate, lastDate } from './data'
+import type { MultiPolygon, Polygon } from 'geojson'
+import { areaPolygon, firstDate, lastDate, type Coord, type Pass } from './data'
 import type { Snapshot } from './pins'
 
 const configuredApi = import.meta.env.VITE_FIRMS_API
@@ -58,9 +59,20 @@ type Day = {
   z_score_reference_days:number
 }
 
+type CellRow = Metrics & {
+  cell_id: string
+  center: Coord
+  platform: Platform
+  pass: Exclude<Pass,'all'> | 'unknown'
+  geometry: Polygon | MultiPolygon
+}
+
+export const gridParams='square_km=3'
+
 export function useHistorical(enabled:boolean, request:string, date:string) {
   const [query,setQuery]=useState<{key:string; days:Day[]}|null>(null)
   const [created,setCreated]=useState<{key:string; selection:Selection}|null>(null)
+  const [map,setMap]=useState<{key:string; rows:CellRow[]; complete:boolean}|null>(null)
   const [activeDay,setActiveDay]=useState<{key:string; value:Day}|null>(null)
   const [error,setError]=useState<{key:string; message:string}|null>(null)
   const [attempt,retry]=useState(0)
@@ -68,6 +80,7 @@ export function useHistorical(enabled:boolean, request:string, date:string) {
   const current=enabled&&query?.key===key?query:null
   const selection=enabled&&created?.key===key?created.selection:undefined
   const mapKey=key+'\n'+date
+  const visible=enabled&&map?.key===mapKey?map:null
   useEffect(()=>{
     if(!enabled)return
     const controller=new AbortController()
@@ -105,6 +118,28 @@ export function useHistorical(enabled:boolean, request:string, date:string) {
       .catch(problem=>{if(!controller.signal.aborted)setError({key:mapKey,message:String(problem.message)})})
     return ()=>controller.abort()
   },[queryId,date,mapKey,calendarReady])
+  useEffect(()=>{
+    if(!enabled||!queryId)return
+    const controller=new AbortController()
+    const signal=controller.signal
+    const run=async()=>{
+      const base='/queries/'+queryId+'/days/'+date+'/cells?'+gridParams+'&limit=5000'
+      const rows:CellRow[]=[]
+      let cursor:string|null=null
+      do{
+        const response=await historicalFetch(base+(cursor?'&cursor='+encodeURIComponent(cursor):''),{signal})
+        const result:{cells:CellRow[];next_cursor:string|null}=await response.json()
+        rows.push(...result.cells)
+        cursor=result.next_cursor
+      }while(cursor&&rows.length<20000)
+      if(!signal.aborted)setMap({key:mapKey,rows,complete:cursor===null})
+    }
+    void run().catch(problem=>{
+      if(!signal.aborted)setError({key:mapKey,message:String(problem.message)})
+    })
+    return ()=>controller.abort()
+  },[enabled,queryId,date,mapKey])
   return {selection, days:current?.days, day:current?.days.find(row=>row.date===date)??(activeDay?.key===mapKey?activeDay.value:undefined),
+    rows:visible?.rows, complete:visible?.complete,
     error:error?.key===key||error?.key===mapKey?error.message:null, retry:()=>retry(value=>value+1)}
 }
