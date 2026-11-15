@@ -3,6 +3,7 @@ import type { MultiPolygon, Polygon } from 'geojson'
 import { areaPolygon, firstDate, lastDate, type MapCell, type Coord, type Pass } from './data'
 import { calibration, periodFrpMinimumDays } from './calibration'
 import type { Metric, Snapshot } from './pins'
+import { viirsStart } from './estimates'
 
 const configuredApi = import.meta.env.VITE_FIRMS_API
 export const historicalApi = configuredApi===undefined?undefined:import.meta.env.DEV?'':configuredApi.replace(/\/$/, '')
@@ -123,8 +124,8 @@ export function useHistorical(enabled:boolean, request:string, date:string) {
     if(!enabled||!queryId)return
     const controller=new AbortController()
     const signal=controller.signal
-    const run=async()=>{
-      const base='/queries/'+queryId+'/days/'+date+'/cells?'+gridParams+'&limit=5000'
+    async function fetchCells(sensor:'modis'|'viirs-snpp') {
+      const base='/queries/'+queryId+'/days/'+date+'/cells?'+gridParams+'&limit=5000&sensor='+sensor
       const rows:CellRow[]=[]
       let cursor:string|null=null
       do{
@@ -133,7 +134,13 @@ export function useHistorical(enabled:boolean, request:string, date:string) {
         rows.push(...result.cells)
         cursor=result.next_cursor
       }while(cursor&&rows.length<20000)
-      if(!signal.aborted)setMap({key:mapKey,rows,complete:cursor===null})
+      return {rows,complete:cursor===null}
+    }
+    const run=async()=>{
+      const viirs=date>=viirsStart?await fetchCells('viirs-snpp'):undefined
+      if(signal.aborted)return
+      const result=viirs?.rows.length?viirs:await fetchCells('modis')
+      if(!signal.aborted)setMap({key:mapKey,...result})
     }
     void run().catch(problem=>{
       if(!signal.aborted)setError({key:mapKey,message:String(problem.message)})
@@ -168,17 +175,17 @@ export function actualDay(day:Day|undefined, pass:Pass) {
 type ActualDay = ReturnType<typeof actualDay>
 export function historicalCalendarValue(date:string, day:ActualDay|undefined, metric:Exclude<Metric,'z'>, harmonized:boolean) {
   const count=metric==='count'
-  const afterTransition=date>=snppArchiveStart
-  const viirs=day?.[count?'viirsCount':'viirs']??null
-  if(afterTransition&&(!harmonized||viirs!==null)){
+  const afterTransition=date>=viirsStart
+  if(afterTransition&&day?.viirsCount!=null){
+    const viirs=day[count?'viirsCount':'viirs']
     return {value:viirs,source:'VIIRS S-NPP',details:viirs===null?'No VIIRS S-NPP value':undefined}
   }
-  if(harmonized){
+  if(afterTransition||harmonized){
     const modisEstimate=day?.[count?'correctedCount':'corrected']??null
     const missing=afterTransition?'No VIIRS or MODIS value':'No MODIS value to harmonize'
     return {
       value:modisEstimate,
-      source:'Adjusted MODIS (estimate)',
+      source:'Harmonized MODIS (estimate)',
       details:modisEstimate===null?missing:undefined,
     }
   }
@@ -186,19 +193,21 @@ export function historicalCalendarValue(date:string, day:ActualDay|undefined, me
   return {value:modis,source:'MODIS',details:modis===null?'No MODIS value':undefined}
 }
 
-export function historicalCells(rows:CellRow[], harmonized:boolean):MapCell[] {
+export function historicalCells(rows:CellRow[], date:string, harmonized:boolean):MapCell[] {
   const groups=new Map<string,CellRow[]>()
   for(const row of rows){
     const group=groups.get(row.cell_id)
     if(group)group.push(row)
     else groups.set(row.cell_id,[row])
   }
+  const adjustModis=date>=viirsStart||harmonized
+  const value=(row:CellRow)=>{
+    if(row.frp_sum_mw===null||!adjustModis||row.platform==='snpp')return row.frp_sum_mw
+    return row.pass==='unknown'?null:row.frp_sum_mw*calibration.dailyFrp[row.pass]
+  }
   return Array.from(groups,([id,group])=>{
-    const modis=group.filter(row=>row.platform!=='snpp')
-    const visual=modis.length?modis:group
-    const value=(row:CellRow)=>row.frp_sum_mw===null?null:row.frp_sum_mw*(harmonized&&row.platform!=='snpp'&&row.pass!=='unknown'?calibration.dailyFrp[row.pass]:1)
-    return {id,center:group[0].center,geometry:group[0].geometry,raw:nullableSum(visual.map(value)),
-      weight:visual.reduce((sum,row)=>sum+(row.detection_count??0),0),pass:visual.some(row=>row.pass==='day')?'day':'night'}
+    return {id,center:group[0].center,geometry:group[0].geometry,raw:nullableSum(group.map(value)),
+      weight:group.reduce((sum,row)=>sum+(row.detection_count??0),0),pass:group.some(row=>row.pass==='day')?'day':'night'}
   })
 }
 

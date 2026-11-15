@@ -192,7 +192,11 @@ export function App() {
   const historical=historicalApi!==undefined&&!game.open
   const viirs=date>=(historical?snppArchiveStart:viirsStart)
   const actual=useHistorical(historical,historicalRequest(settings),date)
-  const cells=useMemo(()=>historical?historicalCells(actual.rows??[],harmonized):demoCells,[historical,actual.rows,harmonized,demoCells])
+  const cells=useMemo(()=>{
+    if(historical)return historicalCells(actual.rows??[],date,harmonized)
+    if(!viirs)return demoCells
+    return demoCells.map(cell=>({...cell,raw:cellObservations(cell,pass).viirsFrp}))
+  },[historical,actual.rows,date,harmonized,viirs,demoCells,pass])
 
 
   const observedDays=useMemo(()=>actual.days?.map(day=>({date:day.date,values:actualDay(day,pass)}))??[],[actual.days,pass])
@@ -487,7 +491,9 @@ export function App() {
           </div>
         </section>
         <section className="filter-section calibration-controls">
-          <h3><Layers3 size={14}/>Intercalibration</h3>
+          <h3><Layers3 size={14}/>Intercalibration (before 2012)
+            <InfoTip label="Intercalibration" help="For the map and the calendar’s fire power and hotspot counts, Raw Satellite shows original MODIS readings before 2012. Harmonized adjusts MODIS to the VIIRS scale. From 2012 onward, both modes use VIIRS when available and harmonized MODIS when VIIRS has no observations."/>
+          </h3>
           <Segmented label="Intercalibration mode" value={harmonized?'harmonized':'raw'} onChange={value=>setSettings(current=>({...current,harmonized:value==='harmonized'}))}
             items={[{value:'raw',label:<><Database size={13}/> Raw Satellite</>},{value:'harmonized',label:<>Harmonized <span className="algorithm-tag mono">E19</span></>}]}/>
         </section>
@@ -537,7 +543,7 @@ export function App() {
         {filtersOpen?<ChevronLeft size={18}/>:<ChevronRight size={18}/>}
       </Button>
 
-      <MapStage focus={focus} date={date} cells={cells} historical={historical} harmonized={!historical&&harmonized} aoi={aoi} tool={tool} onArea={updateArea} onCirclePreviewRadius={setCirclePreviewRadius}
+      <MapStage focus={focus} date={date} cells={cells} historical={historical} harmonized={!historical&&!viirs&&harmonized} aoi={aoi} tool={tool} onArea={updateArea} onCirclePreviewRadius={setCirclePreviewRadius}
         command={command} onCamera={value=>{camera.current=value}} options={options} onOptions={next=>setSettings(current=>({...current,options:next}))}
         countries={countries} admins={admins} ecoregions={ecoregions} areaMode={areaMode} selected={selected} onRegion={selectMapRegion}
         measuring={measuring} orbiting={orbiting} onTourEnd={()=>showTourStop(tourStop)}/>

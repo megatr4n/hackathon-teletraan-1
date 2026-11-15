@@ -1,7 +1,7 @@
 import { CalendarDays, ChartNoAxesCombined, ChevronDown, Grid3X3, Pause, Play, SkipBack, SkipForward } from 'lucide-react'
 import { DAY, doy, firstDate, iso, lastDate, prettyDate, years, clampDate } from './data'
 import { archiveDates } from './observations'
-import { dateIndex, type DailyStats } from './estimates'
+import { dateIndex, viirsStart, type DailyStats } from './estimates'
 import { Button, InfoTip, Segmented, frpHelp, hotspotHelp, zScoreHelp } from './ui'
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import type { CalendarView, Metric } from './pins'
@@ -51,8 +51,8 @@ function MetricPicker({metric,onMetric}:{metric:Metric;onMetric:(metric:Metric)=
   </div>
 }
 
-const YearRows=memo(function YearRows({year,halves,current,from,to,values,heats,metric,view,historicalDays}:{
-  year:number;halves:number[][];current:string;from:string;to:string;values:(number|null)[];heats:number[];metric:Metric;view:CalendarView;historicalDays?:HistoricalDay[]
+const YearRows=memo(function YearRows({year,halves,current,from,to,values,heats,metric,view,harmonized,historicalDays}:{
+  year:number;halves:number[][];current:string;from:string;to:string;values:(number|null)[];heats:number[];metric:Metric;view:CalendarView;harmonized:boolean;historicalDays?:HistoricalDay[]
 }) {
   return <div className={'daily-year '+(current?'selected-year':'')} data-year={year}>
     <span className="year mono">{year}{[2020,2018,2015].includes(year)&&<i/>}</span>
@@ -67,7 +67,7 @@ const YearRows=memo(function YearRows({year,halves,current,from,to,values,heats,
             const active=date===current
             const amount=values[start+i]
             const label=historicalDays&&metric==='frp'?'Fire radiative power':metricLabels[metric]
-            const source=historicalDays?.[start+i].source
+            const source=historicalDays?.[start+i].source??(date>=viirsStart?'Demo VIIRS':harmonized?'Demo harmonized MODIS':'Demo raw MODIS')
             const details=historicalDays?.[start+i].details
             const title=date+' · '+label+' · '+(amount===null?(details??'No observed value'):amount.toLocaleString('en-US',{maximumFractionDigits:2})+
               (metric==='frp'?' MW':metric==='count'?' hotspots':'')+(source?' · '+source:'')+(details?' · '+details:''))
@@ -120,10 +120,10 @@ export function Timeline({date,from,to,playing,onPlay,onSelect,series,historical
       const ceiling=Math.log1p(reference)
       return {values,heats:values.map(value=>value===null?0:Math.min(1,.125+.875*Math.log1p(Math.abs(value))/ceiling))}
     }
-    const powers=series.map(day=>harmonized?day.corrected:day.raw)
+    const powers=series.map((day,index)=>archiveDates[index]>=viirsStart?day.viirs:harmonized?day.corrected:day.raw)
     const mean=powers.reduce((a,b)=>a+b,0)/powers.length
     const deviation=Math.sqrt(powers.reduce((sum,power)=>sum+(power-mean)**2,0)/powers.length)||1
-    const values=metric==='frp'?powers:metric==='count'?series.map(day=>harmonized?day.correctedCount:day.rawCount):powers.map(power=>(power-mean)/deviation)
+    const values=metric==='frp'?powers:metric==='count'?series.map((day,index)=>archiveDates[index]>=viirsStart?day.viirsCount:harmonized?day.correctedCount:day.rawCount):powers.map(power=>(power-mean)/deviation)
     const peak=Math.max(1,...values)
     return {values,heats:values.map(amount=>Math.max(0,amount/peak)**.7)}
   },[series,metric,harmonized,historicalDays])
@@ -179,7 +179,7 @@ export function Timeline({date,from,to,playing,onPlay,onSelect,series,historical
       onClick={event=>{const chosen=(event.target as HTMLElement).closest<HTMLButtonElement>('button[data-date]');if(chosen?.dataset.date&&!chosen.disabled)onSelect(chosen.dataset.date,true)}}>
       <div className="daily-calendar-inner">
         <div className="daily-months mono"><span>YEAR</span><span>HALF</span><div>{months.slice(0,6).map((month,i)=><span key={month}>{month}<small>{months[i+6]}</small></span>)}</div></div>
-        {yearDays.map(({year,halves})=><YearRows key={year} year={year} halves={halves} current={date.startsWith(String(year))?date:''} from={from} to={to} values={values} heats={heats} metric={metric} view={view} historicalDays={historicalDays}/>)}
+        {yearDays.map(({year,halves})=><YearRows key={year} year={year} halves={halves} current={date.startsWith(String(year))?date:''} from={from} to={to} values={values} heats={heats} metric={metric} view={view} harmonized={harmonized} historicalDays={historicalDays}/>)}
       </div>
     </div>
   </section>
