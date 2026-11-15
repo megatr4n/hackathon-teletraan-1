@@ -76,3 +76,11 @@ class HistoricalDataTest(unittest.TestCase):
         self.assertEqual(len(second), 1)
         self.assertLess(first[0][:3], second[0][:3])
         self.assertEqual([first[0][1], second[0][1]], ["terra", "terra"])
+
+    def test_square_centers_are_in_bounds_and_detection_totals_match_h3(self):
+        h3 = data.cell_records(self.release, self.selection, self.day, 7, self.cursor, 100)
+        squares = data.cell_records(self.release, self.selection, self.day, 7, self.cursor, 100, size=3)
+        self.assertEqual(sum(row[3] for row in h3), sum(row[3] for row in squares))
+        for cell, *_ in squares:
+            (lon, lat), (west, south, east, north) = data.square_center(cell, 3)
+            self.assertTrue(west < lon < east and south < lat < north)

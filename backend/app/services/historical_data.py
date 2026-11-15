@@ -271,7 +271,18 @@ def daily_records(release, selection, start, end):
         """, args).fetchall()
 
 
-def cell_records(release, selection, day, resolution, cursor, limit, sensor=None):
+def square_center(cell_id, size):
+    row, column = map(int, cell_id.split("_"))
+    latitude = min(90, (row + 1) * size / 111.195 - 90)
+    latitude = (latitude + row * size / 111.195 - 90) / 2
+    width = size / (111.195 * math.cos(math.radians(latitude)))
+    west = -180 + column * width
+    longitude = (west + min(180, west + width)) / 2
+    return [longitude, latitude], (west, row * size / 111.195 - 90,
+                                  min(180, west + width), min(90, (row + 1) * size / 111.195 - 90))
+
+
+def cell_records(release, selection, day, resolution, cursor, limit, sensor=None, size=None):
     with SCAN_LOCK, duckdb.connect(config=DUCKDB_OPTIONS) as db:
         db.execute("SET enable_progress_bar = false")
         source, args = records_sql(release, selection, day, day, db, sensor=sensor)
@@ -280,10 +291,17 @@ def cell_records(release, selection, day, resolution, cursor, limit, sensor=None
         def cell_id(latitude: float, longitude: float) -> str:
             return h3.latlng_to_cell(latitude, longitude, resolution)
 
-        db.create_function("h3_cell", cell_id)
+        if size is None:
+            db.create_function("h3_cell", cell_id)
+            cell_expression = "h3_cell(latitude, longitude)"
+        else:
+            row = f"floor((least(latitude, 89.9999999) + 90) * 111.195 / {size})"
+            midpoint = f"(({row} * {size} / 111.195 - 90 + least(90, ({row} + 1) * {size} / 111.195 - 90)) / 2)"
+            column = f"floor((least(longitude, 179.9999999) + 180) * 111.195 * cos(radians({midpoint})) / {size})"
+            cell_expression = f"concat(({row})::BIGINT, '_', ({column})::BIGINT)"
         return db.execute(f"""
             WITH indexed AS (
-                SELECT h3_cell(latitude, longitude) AS cell_id, platform, pass, valid_frp
+                SELECT {cell_expression} AS cell_id, platform, pass, valid_frp
                 FROM ({source})
             )
             SELECT cell_id, platform, pass, {METRICS}
