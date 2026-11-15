@@ -13,6 +13,7 @@ import { Button, Segmented } from './ui'
 import { PuzzleDropdown } from './PuzzlePanels'
 import { puzzleFocus, type Puzzle } from './dailyPuzzle'
 import { useDailyPuzzle } from './useDailyPuzzle'
+import { snapshotFromUrl, updateViewUrl } from './viewLink'
 
 import { cinematicTrack, tourRegions, type CameraCommand } from './cameraTour'
 function UtcClock() {
@@ -92,10 +93,10 @@ function SensorRow({label,value,unit,active}:{label:string;value:string;unit?:st
 }
 
 export function App() {
-  const [settings,setSettings]=useState(initialSnapshot)
+  const [settings,setSettings]=useState(()=>snapshotFromUrl())
   const {focus,region,date,from,to,pass,harmonized,areaMode,aoi,radius,query,options,metric,calendarView}=settings
-  const camera=useRef(initialSnapshot.camera)
-  const [command,setCommand]=useState<CameraCommand|null>(null)
+  const camera=useRef(settings.camera)
+  const [command,setCommand]=useState<CameraCommand|null>(()=>settings===initialSnapshot?null:{camera:settings.camera,duration:0})
   const [tool,setTool]=useState<Tool>(null)
   const [circlePreviewRadius,setCirclePreviewRadius]=useState<number|null>(null)
   const [dialog,setDialog]=useState(false)
@@ -174,6 +175,9 @@ export function App() {
   const viirs=date>=viirsStart
 
   const game=useDailyPuzzle(focus.id,hasSelectedDay?date:null,setMessage)
+  useEffect(()=>{
+    if(!game.open&&!orbiting)updateViewUrl(settings)
+  },[game.open,orbiting,settings])
 
   useEffect(()=>{
     if(!playing)return
