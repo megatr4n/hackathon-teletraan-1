@@ -401,7 +401,6 @@ export function App() {
   }
   function orbit(short=false) {
     if(orbiting){stopTour(true);return}
-    setHasSelectedDay(false)
     setMeasuring(false);setTool(null);setPlaying(false)
     const stops=tourRegions.map(entry=>({
       ...settings,focus:entry,region:null,areaMode:'countries' as const,aoi:null,query:'',

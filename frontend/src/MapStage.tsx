@@ -343,7 +343,7 @@ export function MapStage({focus,date,cells,loadingCells,weekly,aoi,tool,onArea,o
       [offset(focus.center,-4,0),offset(focus.center,-1.7,0)],[offset(focus.center,1.7,0),offset(focus.center,4,0)],
       [offset(focus.center,0,-4),offset(focus.center,0,-1.7)],[offset(focus.center,0,1.7),offset(focus.center,0,4)],
     ]}}]))
-  },[cells,focus,harmonized,ready,aoi,selected,historical,showDemoContours])
+  },[cells,focus,ready,aoi,selected,historical,showDemoContours])
 
   useEffect(()=>{
     if(ready)fire.current?.update(cells,!playing)
