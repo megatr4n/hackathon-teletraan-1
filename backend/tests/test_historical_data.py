@@ -52,3 +52,20 @@ class HistoricalDataTest(unittest.TestCase):
         self.assertCountEqual([row[-3:] for row in rows], [
             ("terra", "day", 10.0), ("terra", "night", None), ("snpp", "day", 7.0),
         ])
+
+    def test_daily_metrics_and_coverage_distinguish_missing_from_unobserved(self):
+        rows = data.daily_records(self.release, self.selection, self.day, self.day)
+        self.assertEqual(rows, [
+            (self.day, "snpp", "day", 1, 1, 0, 7.0),
+            (self.day, "terra", "day", 1, 1, 0, 10.0),
+            (self.day, "terra", "night", 1, 0, 1, None),
+        ])
+        self.assertEqual(data.daily_records(self.release, self.selection, date(2012, 1, 22), date(2012, 1, 22)), [])
+        self.assertEqual(data.coverage("terra", date(2012, 1, 22), False), "unknown_coverage")
+        self.assertEqual(data.coverage("aqua", date(2002, 7, 3), False), "outside_observed_range")
+
+    def test_antimeridian_circle_includes_the_other_side(self):
+        circle = SimpleNamespace(kind="circle", center=(179.95, 0), radius_km=20)
+        day = date(2012, 1, 21)
+        rows = data.daily_records(self.release, self.select(circle), day, day)
+        self.assertEqual(rows, [(day, "aqua", "day", 1, 1, 0, 25.0)])

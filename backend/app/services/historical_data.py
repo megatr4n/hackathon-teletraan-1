@@ -5,11 +5,12 @@ import json
 import math
 import os
 import re
-from datetime import date
+from datetime import date, timedelta
 from functools import lru_cache
 from pathlib import Path
-from threading import local
+from threading import Lock, local
 
+import duckdb
 import shapely
 import yaml
 from shapely.geometry import shape
@@ -233,3 +234,37 @@ def records_sql(release, selection, start, end, db, sensor=None):
         )
         SELECT * FROM points WHERE platform IN ({platforms})
     """, args
+
+
+METRICS = """
+    count(*) AS detection_count,
+    count(valid_frp) AS valid_frp_count,
+    count(*) - count(valid_frp) AS missing_frp_count,
+    sum(valid_frp) AS frp_sum_mw
+"""
+SCAN_LOCK = Lock()
+DUCKDB_OPTIONS = {"threads": 4}
+
+
+def date_rows(start, end):
+    for offset in range((end - start).days + 1):
+        yield start + timedelta(days=offset)
+
+
+def coverage(platform, day, has_records):
+    start, end = PLATFORM_RANGES[platform]
+    if not start <= day <= end:
+        return "outside_observed_range"
+    return "observed_records" if has_records else "unknown_coverage"
+
+
+def daily_records(release, selection, start, end):
+    with SCAN_LOCK, duckdb.connect(config=DUCKDB_OPTIONS) as db:
+        db.execute("SET enable_progress_bar = false")
+        source, args = records_sql(release, selection, start, end, db)
+        if not source:
+            return []
+        return db.execute(f"""
+            SELECT obs_date, platform, pass, {METRICS}
+            FROM ({source}) GROUP BY ALL ORDER BY ALL
+        """, args).fetchall()
