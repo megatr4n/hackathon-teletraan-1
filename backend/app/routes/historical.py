@@ -12,6 +12,7 @@ from datetime import UTC, date, datetime
 from datetime import timedelta
 from fastapi import APIRouter, HTTPException
 from fastapi import Query
+from functools import lru_cache
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from shapely.errors import GEOSException
 from threading import Lock
@@ -110,6 +111,10 @@ class PlatformDay(Counts):
 class DailyObservation(BaseModel):
     date: date
     platforms: list[PlatformDay]
+
+
+class CalendarResponse(Provenance):
+    days: list[DailyObservation]
 
 
 class DayResponse(Provenance, DailyObservation):
@@ -267,6 +272,11 @@ def metrics(detections=0, valid=0, missing=0, frp=None):
     }
 
 
+@lru_cache(maxsize=16)
+def calendar_rows(selection):
+    return range_rows(selection, selection.request.start, selection.request.end)
+
+
 def scan_daily(selection, start, end):
     # Release the DuckDB scan lock between blocks so day and map requests can run.
     while start <= end:
@@ -298,6 +308,13 @@ def range_rows(selection, start, end):
             entries.append({"platform": platform, "coverage_status": status, "by_pass": passes, **totals})
         rows[day] = {"date": day.isoformat(), "platforms": entries}
     return rows
+
+
+@router.get("/queries/{query_id}/calendar", response_model=CalendarResponse)
+def calendar(query_id: str):
+    selection = get_selection(query_id)
+    rows = calendar_rows(selection)
+    return {**selection.metadata(), "days": list(rows.values())}
 
 
 @router.get("/queries/{query_id}/days/{day}", response_model=DayResponse)
